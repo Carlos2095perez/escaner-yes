@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>YES · Verificar comprobante</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+:root{
+  --ink:#0A0B0D; --yellow:#FFDD00; --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
+  --red:#FF4152; --red-lo:#2A0E12; --white:#FFFFFF; --muted:#9AA1AA;
+  --sora:'Sora',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
+#reader{position:fixed;inset:0;z-index:0;background:#000}
+#reader video{width:100vw!important;height:100vh!important;object-fit:cover!important}
+#reader__dashboard,#reader__scan_region img,#reader img{display:none!important}
+
+/* ---------- Capa de escaneo EN VIVO ---------- */
+.scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 44%, transparent 30%, rgba(0,0,0,.66) 80%)}
+.topbar{position:absolute;top:calc(env(safe-area-inset-top) + 16px);left:0;right:0;padding:0 20px;
+  display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:9px;font-family:var(--sora);font-weight:800;letter-spacing:.5px}
+.brand .dot{width:26px;height:26px;border-radius:8px;background:var(--yellow);color:#000;
+  display:grid;place-items:center;font-size:13px}
+.vend{font-size:12px;color:var(--muted);text-align:right;line-height:1.3}
+.vend b{color:#fff;font-weight:600}
+.live{display:flex;align-items:center;gap:6px;font-size:11px;color:#fff;font-family:var(--sora);
+  background:rgba(0,0,0,.35);padding:4px 9px;border-radius:999px;margin-top:6px;justify-content:flex-end}
+.live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1}
+.frame i{position:absolute;width:36px;height:36px;border:3px solid var(--yellow);border-radius:4px;
+  animation:cornPulse 1.6s ease-in-out infinite}
+@keyframes cornPulse{50%{border-color:#fff}}
+.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0}
+.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0}
+.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0}
+.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
+/* la barra que sube y baja (prueba visible de que está escaneando en vivo) */
+.laser{position:absolute;left:6%;right:6%;height:3px;top:6%;border-radius:3px;
+  background:linear-gradient(90deg,transparent,var(--yellow),transparent);
+  box-shadow:0 0 16px 3px rgba(255,221,0,.8);animation:sweep 2s ease-in-out infinite}
+@keyframes sweep{0%{top:6%}50%{top:90%}100%{top:6%}}
+
+.status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
+.status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
+  border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:11px 18px;font-size:14px;font-family:var(--sora);font-weight:600}
+.status .pill .d{width:9px;height:9px;border-radius:50%;background:var(--yellow);animation:blink 1s infinite}
+.status small{display:block;margin-top:10px;color:var(--muted);font-size:12.5px}
+
+/* ---------- Activación ---------- */
+.gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 10%, rgba(255,221,0,.10), transparent 60%), var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:34px;text-align:center}
+.gate .mark{width:78px;height:78px;border-radius:22px;background:var(--yellow);color:#000;display:grid;place-items:center;
+  font-family:var(--sora);font-weight:800;font-size:32px;box-shadow:0 18px 50px -12px rgba(255,221,0,.45)}
+.gate h1{font-family:var(--sora);font-weight:800;font-size:27px;line-height:1.15}
+.gate p{color:var(--muted);font-size:14.5px;max-width:300px;line-height:1.5}
+.gate .err{color:var(--red);font-size:13px;min-height:18px;max-width:300px}
+.btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:17px;border:0;cursor:pointer;
+  padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,221,0,.55);transition:transform .12s}
+.btn:active{transform:scale(.97)}
+
+/* ---------- Verificando ---------- */
+.verify{position:fixed;inset:0;z-index:7;display:none;place-items:center;background:rgba(6,8,10,.86);backdrop-filter:blur(6px)}
+.verify.on{display:grid}
+.spin{width:54px;height:54px;border-radius:50%;border:4px solid rgba(255,255,255,.15);border-top-color:var(--yellow);animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+.verify span{position:absolute;bottom:38%;font-size:14px;color:var(--muted);font-family:var(--sora)}
+
+/* ---------- Resultado ---------- */
+.result{position:fixed;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;padding:34px;text-align:center;overflow:hidden}
+.result.on{display:flex;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.result.ok{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%)}
+.result.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
+.badge{position:relative;width:150px;height:150px;display:grid;place-items:center;margin-bottom:8px}
+.rings{position:absolute;inset:0;display:grid;place-items:center}
+.rings b{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid var(--green);opacity:0}
+.result.ok .rings b{animation:ping 1.5s ease-out infinite}
+.rings b:nth-child(2){animation-delay:.5s}.rings b:nth-child(3){animation-delay:1s}
+@keyframes ping{0%{transform:scale(.5);opacity:.9}80%{opacity:0}100%{transform:scale(2.1);opacity:0}}
+.disc{width:118px;height:118px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
+  background:radial-gradient(circle at 50% 35%, var(--green-hi), var(--green));box-shadow:0 0 46px -4px var(--green);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+.result.bad .disc{background:radial-gradient(circle at 50% 35%, #ff7d89, var(--red));box-shadow:0 0 46px -4px var(--red)}
+@keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+.disc svg{width:64px;height:64px}
+.disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
+@keyframes draw{to{stroke-dashoffset:0}}
+.rlabel{font-family:var(--sora);font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--green-hi);margin-bottom:2px}
+.result.bad .rlabel{color:#ff9aa4}
+.amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
+.result.bad .amount{font-size:32px}
+.card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;font-size:14px}
+.row+.row{border-top:1px solid rgba(255,255,255,.08)}
+.row .k{color:var(--muted)}.row .v{font-weight:600;font-family:var(--sora);text-align:right}
+.reasons{margin-top:14px;font-size:14px;color:#ffd7db;line-height:1.5;max-width:340px}
+.chip{margin-top:14px;font-size:12px;color:var(--muted);border:1px solid rgba(255,255,255,.14);padding:6px 12px;border-radius:999px}
+.again{margin-top:22px}
+.result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
+.result.bad .again{background:#fff;color:#1a1a1a}
+.spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
+@media (prefers-reduced-motion:reduce){.laser,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
+</style>
+</head>
+<body>
+<div id="reader"></div>
+
+<div class="scan-ui" id="scanUi" style="display:none">
+  <div class="topbar">
+    <div class="brand"><span class="dot">Y</span>YES</div>
+    <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
+  </div>
+  <div class="frame"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+  <div class="status">
+    <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
+    <small>Centra el QR del comprobante en el recuadro</small>
+  </div>
+</div>
+
+<div class="verify" id="verify"><div class="spin"></div><span>Verificando…</span></div>
+
+<div class="result" id="result">
+  <div class="badge"><div class="rings"><b></b><b></b><b></b></div>
+    <div class="disc"><svg viewBox="0 0 52 52" id="mark"></svg></div></div>
+  <div class="rlabel" id="rlabel"></div>
+  <div class="amount" id="ramount"></div>
+  <div id="rbody"></div>
+  <button class="btn again" id="btnAgain">Escanear otro</button>
+</div>
+
+<div class="gate" id="gate">
+  <div class="mark">Y</div>
+  <h1>Verificar comprobante</h1>
+  <p>Activa la cámara y apunta al código QR. La lectura es automática y en vivo.</p>
+  <button class="btn" id="btnStart">Activar cámara</button>
+  <div class="err" id="gateErr"></div>
+</div>
+
+<script>
+// ⚠️ Pega aquí la URL /exec de tu Web App de Apps Script:
+const GAS_URL = 'http://localhost:8787';
+
+const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
+const CONFIG={CUENTA:'0024', BENEF:['INDUYES','INDUSTRIA ALIMENTICIA YES']};
+const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35';
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const vCode=params.get('v')||'';
+const montoURL=parseFloat(params.get('monto'))||0;
+$('vendBox').innerHTML = vCode ? 'Vendedor · <b>'+(VEND[vCode]||vCode)+' ('+vCode+')</b>' : '';
+
+let qr=null, ocupado=false, voces=[], noHallaDesde=0;
+function cargarVoces(){ voces=speechSynthesis.getVoices(); }
+cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
+
+$('btnStart').addEventListener('click', activar);
+$('btnAgain').addEventListener('click', reanudar);
+
+async function activar(){
+  try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
+  qr=new Html5Qrcode('reader',{verbose:false});
+  try{
+    await qr.start({facingMode:'environment'}, {fps:12}, onScan, onTick);
+    $('gate').style.display='none'; $('scanUi').style.display='block';
+  }catch(e){ $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.'; }
+}
+
+// Se dispara casi cada frame cuando NO encuentra QR -> feedback en vivo
+function onTick(){
+  if(ocupado) return;
+  const t=Date.now();
+  if(!noHallaDesde) noHallaDesde=t;
+  // si lleva un rato sin leer, sugiere acercarse
+  $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
+}
+
+async function onScan(texto){
+  if(ocupado) return;
+  const datos=parsear(texto);
+  if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; } // sigue en vivo
+  ocupado=true; noHallaDesde=0;
+  try{ await qr.pause(true); }catch(e){}
+  $('verify').classList.add('on');
+  try{
+    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL}), redirect:'follow'});
+    const r=await res.json();
+    $('verify').classList.remove('on'); mostrar(r, datos);
+  }catch(e){
+    $('verify').classList.remove('on'); mostrar({veredicto:'ERROR', motivos:['Sin conexión. Intenta de nuevo.']}, datos);
+  }
+}
+
+function parsear(t){
+  if(!t) return null;
+  const p=t.split(':').map(s=>s.trim());
+  if(p.length<13 || !p[1].includes('BP_TO_DEUNA')) return null;
+  return {ordenante:p[3],ctaOrigen:p[4],beneficiario:p[6],ctaDestino:p[7],
+          monto:parseFloat(p[8]),timestamp:parseInt(p[9],10)*1000,uuid:p[10],comprobante:p[11],hash:p[12]};
+}
+
+function mostrar(r,d){
+  const ok=(r.veredicto==='PENDIENTE_CONCILIACION'||r.veredicto==='ALERTA'||r.ok);
+  const box=$('result'); box.className='result on '+(ok?'ok':'bad');
+  $('mark').innerHTML='<path d="'+(ok?CHECK:CROSS)+'"/>';
+  if(ok && d){
+    const last4=String(d.ctaDestino).slice(-4);
+    $('rlabel').textContent='Transferencia recibida';
+    animarMonto($('ramount'), d.monto);
+    $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
+      fila('Cuenta INDUYES','····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
+      (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
+      '<div class="chip">Registrado · pendiente de conciliar con el banco</div>';
+    lanzarChispas(); hablar(d);
+  }else{
+    const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
+    $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
+    $('ramount').textContent=titulo;
+    $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
+  }
+}
+function fila(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
+
+function animarMonto(el,target){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches){ el.textContent='$'+target.toFixed(2); return; }
+  const dur=700,t0=performance.now();
+  (function f(t){const p=Math.min(1,(t-t0)/dur);const val=target*(1-Math.pow(1-p,3));
+    el.textContent='$'+val.toFixed(2); if(p<1)requestAnimationFrame(f);})(t0);
+}
+function lanzarChispas(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  const box=$('result'),cx=innerWidth/2,cy=innerHeight*0.32;
+  for(let i=0;i<14;i++){ const s=document.createElement('div'); s.className='spark'; box.appendChild(s);
+    const ang=Math.random()*Math.PI*2,dist=90+Math.random()*140;
+    s.style.left=cx+'px'; s.style.top=cy+'px';
+    s.animate([{transform:'translate(-50%,-50%) scale(1)',opacity:1},
+      {transform:'translate('+(Math.cos(ang)*dist-6)+'px,'+(Math.sin(ang)*dist-6)+'px) scale(0)',opacity:0}],
+      {duration:700+Math.random()*400,easing:'cubic-bezier(.2,.7,.3,1)'});
+    setTimeout(()=>s.remove(),1300);
+  }
+}
+function hablar(d){
+  try{
+    const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
+    const ent=Math.floor(d.monto),cent=Math.round((d.monto-ent)*100);
+    const last4=String(d.ctaDestino).slice(-4).split('').map(c=>dig[+c]!==undefined?dig[+c]:c).join(' ');
+    let t='Transferencia recibida. '+ent+' dólares'; if(cent>0)t+=' con '+cent+' centavos';
+    t+='. A la cuenta terminada en '+last4+'.';
+    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.02;
+    const v=voces.find(x=>/es[-_]?(US|419|MX|ES)/i.test(x.lang))||voces.find(x=>/^es/i.test(x.lang));
+    if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+async function reanudar(){
+  $('result').className='result'; ocupado=false; $('statusText').textContent='Buscando código…';
+  try{ await qr.resume(); }catch(e){ try{ await qr.start({facingMode:'environment'},{fps:12},onScan,onTick);}catch(_){} }
+}
+</script>
+</body>
+</html>
