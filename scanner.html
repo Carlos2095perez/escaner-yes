@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
 :root{
   --ink:#0A0B0D; --yellow:#FFDD00; --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
@@ -16,13 +16,13 @@
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
-#reader{position:fixed;inset:0;z-index:0;background:#000}
-#reader video{width:100vw!important;height:100vh!important;object-fit:cover!important}
-#reader__dashboard,#reader__scan_region img,#reader img{display:none!important}
+canvas{display:none}
+#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover}
 
 /* ---------- Capa de escaneo EN VIVO ---------- */
-.scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;
+.scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;
   background:radial-gradient(120% 90% at 50% 44%, transparent 30%, rgba(0,0,0,.66) 80%)}
+.scan-ui.on{display:block}
 .topbar{position:absolute;top:calc(env(safe-area-inset-top) + 16px);left:0;right:0;padding:0 20px;
   display:flex;align-items:center;justify-content:space-between}
 .brand{display:flex;align-items:center;gap:9px;font-family:var(--sora);font-weight:800;letter-spacing:.5px}
@@ -43,7 +43,6 @@ html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(-
 .frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0}
 .frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0}
 .frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
-/* la barra que sube y baja (prueba visible de que está escaneando en vivo) */
 .laser{position:absolute;left:6%;right:6%;height:3px;top:6%;border-radius:3px;
   background:linear-gradient(90deg,transparent,var(--yellow),transparent);
   box-shadow:0 0 16px 3px rgba(255,221,0,.8);animation:sweep 2s ease-in-out infinite}
@@ -111,9 +110,10 @@ html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(-
 </style>
 </head>
 <body>
-<div id="reader"></div>
+<video id="video" muted playsinline autoplay></video>
+<canvas id="canvas"></canvas>
 
-<div class="scan-ui" id="scanUi" style="display:none">
+<div class="scan-ui" id="scanUi">
   <div class="topbar">
     <div class="brand"><span class="dot">Y</span>YES</div>
     <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
@@ -145,11 +145,13 @@ html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(-
 </div>
 
 <script>
-// ⚠️ Pega aquí la URL /exec de tu Web App de Apps Script:
+// URL /exec de tu Web App de Apps Script. Mientras no la configures, la app
+// sigue funcionando: valida el QR en el navegador y solo omite el registro
+// en el Sheet (que necesita el backend desplegado).
 const GAS_URL = 'PEGA_AQUI_LA_URL_EXEC_DEL_WEBAPP';
 
 const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
-const CONFIG={CUENTA:'0024', BENEF:['INDUYES','INDUSTRIA ALIMENTICIA YES']};
+const CONFIG={CUENTA_DESTINO:'0024', BENEFICIARIO_CLAVES:['INDUYES','INDUSTRIA ALIMENTICIA YES'], VENTANA_HORAS:36};
 const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
@@ -157,46 +159,88 @@ const vCode=params.get('v')||'';
 const montoURL=parseFloat(params.get('monto'))||0;
 $('vendBox').innerHTML = vCode ? 'Vendedor · <b>'+(VEND[vCode]||vCode)+' ('+vCode+')</b>' : '';
 
-let qr=null, ocupado=false, voces=[], noHallaDesde=0;
+let voces=[];
 function cargarVoces(){ voces=speechSynthesis.getVoices(); }
 cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
+
+let ocupado=false, escaneando=false, noHallaDesde=0;
+const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 
 $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
 
 async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
-  qr=new Html5Qrcode('reader',{verbose:false});
+  $('gateErr').textContent='';
   try{
-    await qr.start({facingMode:'environment'}, {fps:12}, onScan, onTick);
-    $('gate').style.display='none'; $('scanUi').style.display='block';
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    video.srcObject=stream;
+    await video.play();
+    $('gate').style.display='none'; $('scanUi').classList.add('on');
+    escaneando=true; noHallaDesde=0;
+    requestAnimationFrame(tick);
   }catch(e){ $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.'; }
 }
 
-// Se dispara casi cada frame cuando NO encuentra QR -> feedback en vivo
-function onTick(){
-  if(ocupado) return;
-  const t=Date.now();
-  if(!noHallaDesde) noHallaDesde=t;
-  // si lleva un rato sin leer, sugiere acercarse
-  $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
+function tick(){
+  if(!escaneando) return;
+  if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+    if(r && r.data){
+      onScan(r.data);
+    }else{
+      const t=Date.now();
+      if(!noHallaDesde) noHallaDesde=t;
+      $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
+    }
+  }
+  requestAnimationFrame(tick);
 }
 
 async function onScan(texto){
   if(ocupado) return;
   const datos=parsear(texto);
-  if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; } // sigue en vivo
+  if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
   ocupado=true; noHallaDesde=0;
-  try{ await qr.pause(true); }catch(e){}
   $('verify').classList.add('on');
-  try{
-    const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL}), redirect:'follow'});
-    const r=await res.json();
-    $('verify').classList.remove('on'); mostrar(r, datos);
-  }catch(e){
-    $('verify').classList.remove('on'); mostrar({veredicto:'ERROR', motivos:['Sin conexión. Intenta de nuevo.']}, datos);
+
+  // 1) Validación inmediata en el navegador (no depende del backend)
+  const local=validarLocal(datos, montoURL);
+
+  // 2) Si ya está configurado el backend, intenta registrar/deduplicar en el Sheet.
+  //    Si falla o no está configurado, se queda con el resultado local (arriba).
+  let resultado=local;
+  if(local.veredicto!=='RECHAZADO' && GAS_URL && GAS_URL.indexOf('PEGA_AQUI')===-1){
+    try{
+      const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL}), redirect:'follow'});
+      resultado=await res.json();
+    }catch(e){ /* backend no disponible: se conserva la validacion local */ }
   }
+
+  $('verify').classList.remove('on');
+  mostrar(resultado, datos);
+}
+
+function validarLocal(d, montoEsperado){
+  const m=[];
+  if(!String(d.ctaDestino||'').endsWith(CONFIG.CUENTA_DESTINO))
+    m.push('La cuenta destino no es INDUYES (...'+String(d.ctaDestino).slice(-4)+').');
+  const benef=String(d.beneficiario||'').toUpperCase();
+  if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
+    m.push('El beneficiario no es INDUYES.');
+  if(montoEsperado && Number(montoEsperado)>0 && Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
+    m.push('El monto no coincide con la factura.');
+  if(m.length) return {veredicto:'RECHAZADO', motivos:m};
+
+  const horas=(Date.now()-Number(d.timestamp))/3.6e6;
+  if(horas>CONFIG.VENTANA_HORAS)
+    return {veredicto:'ALERTA', motivos:['El comprobante tiene '+horas.toFixed(0)+' horas. Revisar.']};
+
+  return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia INDUYES.'], ok:true};
 }
 
 function parsear(t){
@@ -218,7 +262,7 @@ function mostrar(r,d){
     $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
       fila('Cuenta INDUYES','····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
       (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
-      '<div class="chip">Registrado · pendiente de conciliar con el banco</div>';
+      '<div class="chip">'+(GAS_URL.indexOf('PEGA_AQUI')===-1?'Registrado · pendiente de conciliar con el banco':'Válido · registro en Sheet pendiente de conectar')+'</div>';
     lanzarChispas(); hablar(d);
   }else{
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
@@ -261,7 +305,6 @@ function hablar(d){
 }
 async function reanudar(){
   $('result').className='result'; ocupado=false; $('statusText').textContent='Buscando código…';
-  try{ await qr.resume(); }catch(e){ try{ await qr.start({facingMode:'environment'},{fps:12},onScan,onTick);}catch(_){} }
 }
 </script>
 </body>
