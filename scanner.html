@@ -151,10 +151,9 @@ canvas{display:none}
 const GAS_URL = 'PEGA_AQUI_LA_URL_EXEC_DEL_WEBAPP';
 
 const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
-const CONFIG={CUENTA_DESTINO_COMPLETA:'2100270024', BENEFICIARIO_CLAVES:['INDUYES','INDUSTRIA ALIMENTICIA YES'], VENTANA_HORAS:36};
+const CONFIG={CUENTA_DESTINO_SUFIJO:'0024', BENEFICIARIO_CLAVES:['INDUYES','INDUSTRIA ALIMENTICIA YES'], VENTANA_HORAS:36};
 const RE_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_HASH=/^[0-9a-f]{16,}$/i;
-const RE_CTA_ORIGEN=/^[0-9]{6,20}$/;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
 const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35';
 const $=id=>document.getElementById(id);
@@ -231,8 +230,11 @@ async function onScan(texto){
 
 function validarLocal(d, montoEsperado){
   const m=[];
-  if(String(d.ctaDestino||'')!==CONFIG.CUENTA_DESTINO_COMPLETA)
-    m.push('La cuenta destino no es la cuenta de INDUYES (...'+String(d.ctaDestino).slice(-4)+').');
+  // La cuenta destino viene ENMASCARADA dentro del propio QR (ej. "******0024"):
+  // el banco/DeUna nunca expone el número completo, ni al comercio ni en el texto
+  // del código. Lo único verificable son los últimos digitos visibles.
+  if(!String(d.ctaDestino||'').endsWith(CONFIG.CUENTA_DESTINO_SUFIJO))
+    m.push('La cuenta destino no es INDUYES (...'+String(d.ctaDestino).slice(-4)+').');
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
     m.push('El beneficiario no es INDUYES.');
@@ -244,7 +246,7 @@ function validarLocal(d, montoEsperado){
     m.push('El QR no tiene un formato de comprobante válido (ID de transacción).');
   if(!RE_HASH.test(String(d.hash||'')))
     m.push('El QR no tiene un formato de comprobante válido (firma).');
-  if(!RE_CTA_ORIGEN.test(String(d.ctaOrigen||'')))
+  if(!String(d.ctaOrigen||'').trim())
     m.push('El QR no tiene un formato de comprobante válido (cuenta origen).');
   if(!RE_COMPROBANTE.test(String(d.comprobante||'')))
     m.push('El QR no tiene un formato de comprobante válido (N° comprobante).');
@@ -260,12 +262,18 @@ function validarLocal(d, montoEsperado){
   return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia INDUYES.'], ok:true};
 }
 
+// Tipos de comprobante conocidos: transferencia bancaria directa (BP_TO_DEUNA)
+// y pago desde billetera DeUna (CASH_OUT_BP). Mismas posiciones de campos,
+// pero el timestamp viene en unidades distintas: segundos vs milisegundos.
+const TIPOS_VALIDOS=['BP_TO_DEUNA','CASH_OUT_BP'];
 function parsear(t){
   if(!t) return null;
   const p=t.split(':').map(s=>s.trim());
-  if(p.length<13 || !p[1].includes('BP_TO_DEUNA')) return null;
+  if(p.length<13 || TIPOS_VALIDOS.indexOf(p[1])===-1) return null;
+  const rawTs=p[9];
+  const timestamp = rawTs.length>10 ? parseInt(rawTs,10) : parseInt(rawTs,10)*1000; // ya en ms vs segundos
   return {ordenante:p[3],ctaOrigen:p[4],beneficiario:p[6],ctaDestino:p[7],
-          monto:parseFloat(p[8]),timestamp:parseInt(p[9],10)*1000,uuid:p[10],comprobante:p[11],hash:p[12]};
+          monto:parseFloat(p[8]),timestamp:timestamp,uuid:p[10],comprobante:p[11],hash:p[12]};
 }
 
 function mostrar(r,d){

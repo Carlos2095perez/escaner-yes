@@ -13,14 +13,15 @@ const SHEET_ID = 'PEGA_AQUI_EL_ID_DEL_SHEET';
 const HOJA = 'REGISTRO_COMPROBANTES';
 
 const CONFIG = {
-  CUENTA_DESTINO_COMPLETA: '2100270024',
+  // La cuenta destino viene ENMASCARADA dentro del propio QR (ej. "******0024"):
+  // el banco/DeUna nunca expone el numero completo. Solo se puede exigir el sufijo visible.
+  CUENTA_DESTINO_SUFIJO: '0024',
   BENEFICIARIO_CLAVES: ['INDUYES', 'INDUSTRIA ALIMENTICIA YES'],
   VENTANA_HORAS: 36
 };
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_HASH = /^[0-9a-f]{16,}$/i;
-const RE_CTA_ORIGEN = /^[0-9]{6,20}$/;
 const RE_COMPROBANTE = /^[0-9A-Za-z]{5,}$/;
 
 function doGet() {
@@ -51,8 +52,8 @@ function getConfig() { return CONFIG; }
 function _validarServidor(d, montoEsperado) {
   const m = [];
   if (!d) return { veredicto: 'RECHAZADO', motivos: ['No se pudo leer el QR.'] };
-  if (String(d.ctaDestino || '') !== CONFIG.CUENTA_DESTINO_COMPLETA)
-    m.push('La cuenta destino no es la cuenta de INDUYES (...' + String(d.ctaDestino).slice(-4) + ').');
+  if (!String(d.ctaDestino || '').endsWith(CONFIG.CUENTA_DESTINO_SUFIJO))
+    m.push('La cuenta destino no es INDUYES (...' + String(d.ctaDestino).slice(-4) + ').');
   const benef = String(d.beneficiario || '').toUpperCase();
   if (!CONFIG.BENEFICIARIO_CLAVES.some(k => benef.indexOf(k) >= 0))
     m.push('El beneficiario no es INDUYES.');
@@ -65,7 +66,7 @@ function _validarServidor(d, montoEsperado) {
     m.push('El QR no tiene un formato de comprobante válido (ID de transacción).');
   if (!RE_HASH.test(String(d.hash || '')))
     m.push('El QR no tiene un formato de comprobante válido (firma).');
-  if (!RE_CTA_ORIGEN.test(String(d.ctaOrigen || '')))
+  if (!String(d.ctaOrigen || '').trim())
     m.push('El QR no tiene un formato de comprobante válido (cuenta origen).');
   if (!RE_COMPROBANTE.test(String(d.comprobante || '')))
     m.push('El QR no tiene un formato de comprobante válido (N° comprobante).');
