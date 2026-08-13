@@ -133,6 +133,7 @@ canvas{display:none}
 
 <video id="video" muted playsinline autoplay></video>
 <canvas id="canvas"></canvas>
+<canvas id="zoomCanvas"></canvas>
 
 <!-- Capa de escaneo en vivo -->
 <div class="scan-ui" id="scanUi">
@@ -197,7 +198,10 @@ async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){} // desbloquea voz
   $('gateErr').textContent='';
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    // Pide la mayor resolucion posible: con mas pixeles nativos, el recorte
+    // central (zoom digital) de abajo tiene mucho mas detalle para leer QR chicos.
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'environment', width:{ideal:2560}, height:{ideal:2560}}, audio:false});
     video.srcObject=stream;
     await video.play();
     $('gate').style.display='none';
@@ -209,14 +213,31 @@ async function activar(){
   }
 }
 
+// Fraccion del lado menor del video que se usa como "zoom" digital central.
+const ZOOM_LADO=0.5;
+const zoomCanvas=$('zoomCanvas'), zoomCtx=zoomCanvas.getContext('2d',{willReadFrequently:true});
+
 // Bucle continuo: lee cada frame del video mientras no haya un QR ya en proceso.
 function tick(){
   if(!escaneando) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
-    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
-    ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-    const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+    const vw=video.videoWidth, vh=video.videoHeight;
+    canvas.width=vw; canvas.height=vh;
+    ctx.drawImage(video,0,0,vw,vh);
+    const img=ctx.getImageData(0,0,vw,vh);
+    let r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+
+    if(!r){
+      // Segundo intento: recorte central a resolucion nativa (zoom digital sin
+      // perder nitidez), para QR pequeños o lejanos que el frame completo no resuelve.
+      const lado=Math.round(Math.min(vw,vh)*ZOOM_LADO);
+      const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
+      zoomCanvas.width=lado; zoomCanvas.height=lado;
+      zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
+      const zimg=zoomCtx.getImageData(0,0,lado,lado);
+      r=jsQR(zimg.data, zimg.width, zimg.height, {inversionAttempts:'attemptBoth'});
+    }
+
     if(r && r.data){
       onScan(r.data);
     }else{
@@ -276,13 +297,14 @@ function mostrar(r, d){
         fila('N° comprobante', d.comprobante)+'</div>'+
       (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
       '<div class="chip">Registrado · pendiente de conciliar con el banco</div>';
-    lanzarChispas(); hablar(d);
+    lanzarChispas(); hablar(d, r);
   }else{
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado'
                :r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
     $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
     $('ramount').textContent=titulo;
     $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
+    hablarRechazo(r);
   }
 }
 function fila(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
@@ -306,16 +328,31 @@ function lanzarChispas(){
     setTimeout(()=>s.remove(),1300);
   }
 }
-function hablar(d){
+function vozEs(){
+  return voces.find(x=>/es[-_]?(US|419|MX|ES)/i.test(x.lang))||voces.find(x=>/^es/i.test(x.lang));
+}
+function hablar(d, r){
   try{
     const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
     const ent=Math.floor(d.monto),cent=Math.round((d.monto-ent)*100);
     const last4=String(d.ctaDestino).slice(-4).split('').map(c=>dig[+c]!==undefined?dig[+c]:c).join(' ');
     let t='Transferencia recibida. '+ent+' dólares'; if(cent>0)t+=' con '+cent+' centavos';
     t+='. A la cuenta terminada en '+last4+'.';
+    if(r && r.veredicto==='ALERTA'){
+      t+=' Atención: '+(r.motivos||[]).join(' ');
+    }
     const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.02;
-    const v=voces.find(x=>/es[-_]?(US|419|MX|ES)/i.test(x.lang))||voces.find(x=>/^es/i.test(x.lang));
-    if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+function hablarRechazo(r){
+  try{
+    let t='Atención. ';
+    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado. Este comprobante ya fue usado. No despachar.';
+    else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
+    else t+='Comprobante rechazado. '+((r.motivos&&r.motivos[0])||'No se acreditó a la cuenta de Induyes.')+' No despachar.';
+    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.0;
+    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
 }
 </script>

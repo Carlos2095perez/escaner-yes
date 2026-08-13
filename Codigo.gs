@@ -23,6 +23,19 @@ const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const RE_HASH = /^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE = /^[0-9A-Za-z]{5,}$/;
 
+// Formatea una fecha pasada como texto relativo legible: "hace 1 minuto", "hace 5 horas", etc.
+function _tiempoRelativo(ts) {
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1) return 'hace unos segundos';
+  if (min === 1) return 'hace 1 minuto';
+  if (min < 60) return 'hace ' + min + ' minutos';
+  const horas = Math.round(min / 60);
+  if (horas === 1) return 'hace 1 hora';
+  if (horas < 24) return 'hace ' + horas + ' horas';
+  const dias = Math.round(horas / 24);
+  return dias === 1 ? 'hace 1 día' : 'hace ' + dias + ' días';
+}
+
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('YES · Verificar comprobante')
@@ -60,7 +73,7 @@ function _validarServidor(d, montoEsperado) {
 
   const horas = (Date.now() - ts) / 3.6e6;
   if (horas > CONFIG.VENTANA_HORAS)
-    return { veredicto: 'ALERTA', motivos: ['El comprobante tiene ' + horas.toFixed(0) + ' horas. Revisar.'] };
+    return { veredicto: 'ALERTA', motivos: ['El comprobante fue hecho ' + _tiempoRelativo(ts) + '. Revisar antes de despachar.'] };
 
   return { veredicto: 'PENDIENTE_CONCILIACION', motivos: ['Comprobante consistente hacia INDUYES.'] };
 }
