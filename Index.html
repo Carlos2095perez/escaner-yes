@@ -249,17 +249,30 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
+// Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
+const evidCanvas=document.createElement('canvas');
+function capturarEvidencia(){
+  try{
+    const vw=video.videoWidth, vh=video.videoHeight, maxW=700;
+    const s=Math.min(1, maxW/vw);
+    evidCanvas.width=Math.round(vw*s); evidCanvas.height=Math.round(vh*s);
+    evidCanvas.getContext('2d').drawImage(video,0,0,evidCanvas.width,evidCanvas.height);
+    return evidCanvas.toDataURL('image/jpeg',0.6);
+  }catch(e){ return ''; }
+}
+
 function onScan(texto){
   if(ocupado) return;
   const datos=parsear(texto);
   if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; } // sigue en vivo
   ocupado=true; noHallaDesde=0;
+  const foto=capturarEvidencia();
   $('verify').classList.add('on');
   google.script.run
     .withSuccessHandler(r=>{ $('verify').classList.remove('on'); mostrar(r, datos); })
     .withFailureHandler(err=>{ $('verify').classList.remove('on');
       mostrar({veredicto:'ERROR', motivos:['Error del servidor: '+err.message]}, datos); })
-    .registrarComprobante({ datos:datos, vendedor:vCode, montoEsperado:montoURL });
+    .registrarComprobante({ datos:datos, vendedor:vCode, montoEsperado:montoURL, foto:foto });
 }
 
 function reanudar(){

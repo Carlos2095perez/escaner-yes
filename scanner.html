@@ -224,11 +224,25 @@ function tick(){
   requestAnimationFrame(tick);
 }
 
+// Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
+// Se reduce a un ancho maximo para que el envio sea rapido.
+const evidCanvas=document.createElement('canvas');
+function capturarEvidencia(){
+  try{
+    const vw=video.videoWidth, vh=video.videoHeight, maxW=700;
+    const s=Math.min(1, maxW/vw);
+    evidCanvas.width=Math.round(vw*s); evidCanvas.height=Math.round(vh*s);
+    evidCanvas.getContext('2d').drawImage(video,0,0,evidCanvas.width,evidCanvas.height);
+    return evidCanvas.toDataURL('image/jpeg',0.6);
+  }catch(e){ return ''; }
+}
+
 async function onScan(texto){
   if(ocupado) return;
   const datos=parsear(texto);
   if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
   ocupado=true; noHallaDesde=0;
+  const foto=capturarEvidencia();
   $('verify').classList.add('on');
 
   // 1) Validación inmediata en el navegador (no depende del backend)
@@ -237,10 +251,10 @@ async function onScan(texto){
   // 2) Si ya está configurado el backend, intenta registrar/deduplicar en el Sheet.
   //    Si falla o no está configurado, se queda con el resultado local (arriba).
   let resultado=local;
-  if(local.veredicto!=='RECHAZADO' && GAS_URL && GAS_URL.indexOf('PEGA_AQUI')===-1){
+  if(GAS_URL && GAS_URL.indexOf('PEGA_AQUI')===-1){
     try{
       const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL}), redirect:'follow'});
+        body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL, foto}), redirect:'follow'});
       resultado=await res.json();
     }catch(e){ /* backend no disponible: se conserva la validacion local */ }
   }

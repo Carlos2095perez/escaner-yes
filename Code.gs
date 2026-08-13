@@ -5,8 +5,12 @@
  *
  * SETUP:
  *  1. Pega el ID de tu Sheet en SHEET_ID.
- *  2. Deploy > Manage deployments > editar (lapiz) > New version > Deploy.
- *  3. Copia la URL /exec y pegala en scanner.html (GAS_URL).
+ *  2. Pega tu correo en CONFIG.EMAIL_CONCILIACION (recibe el resumen diario).
+ *  3. Deploy > Manage deployments > editar (lapiz) > New version > Deploy.
+ *  4. Copia la URL /exec y pegala en scanner.html (GAS_URL).
+ *  5. En el editor de Apps Script, selecciona la funcion crearTriggerDiario
+ *     y dale Run UNA SOLA VEZ (activa el correo diario de conciliacion).
+ *     La primera vez Google va a pedir autorizar permisos de Drive y Correo.
  */
 
 const SHEET_ID = 'PEGA_AQUI_EL_ID_DEL_SHEET';
@@ -17,7 +21,12 @@ const CONFIG = {
   // el banco/DeUna nunca expone el numero completo. Solo se puede exigir el sufijo visible.
   CUENTA_DESTINO_SUFIJO: '0024',
   BENEFICIARIO_CLAVES: ['INDUYES', 'INDUSTRIA ALIMENTICIA YES'],
-  VENTANA_HORAS: 36
+  VENTANA_HORAS: 36,
+  // Si una cuenta origen acumula este numero de comprobantes RECHAZADO/DUPLICADO
+  // en el historial, los siguientes comprobantes de esa misma cuenta se marcan ALERTA.
+  UMBRAL_LISTA_NEGRA: 2,
+  // Correo que recibe el resumen diario de comprobantes pendientes de conciliar.
+  EMAIL_CONCILIACION: 'PEGA_AQUI_TU_CORREO@gmail.com'
 };
 
 const RE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -95,45 +104,149 @@ function _validarServidor(d, montoEsperado) {
   return { veredicto: 'PENDIENTE_CONCILIACION', motivos: ['Comprobante consistente hacia INDUYES.'] };
 }
 
+// Indices de columnas en la hoja (0-based), usados por dedup y lista negra.
+const COL = {
+  REGISTRADO: 0, VENDEDOR: 1, MONTO: 2, UUID: 3, COMPROBANTE: 4,
+  CTA_DESTINO: 5, CTA_ORIGEN: 6, BENEFICIARIO: 7, ORDENANTE: 8,
+  FECHA_QR: 9, VEREDICTO: 10, MOTIVOS: 11, FOTO_URL: 12
+};
+
 function _hoja() {
   const ss = SpreadsheetApp.openById(SHEET_ID);
   let sh = ss.getSheetByName(HOJA);
   if (!sh) {
     sh = ss.insertSheet(HOJA);
     sh.appendRow(['Registrado', 'Vendedor', 'MontoQR', 'UUID', 'Comprobante',
-                  'CuentaDestino', 'Beneficiario', 'Ordenante', 'FechaQR', 'Veredicto', 'Motivos']);
+                  'CuentaDestino', 'CuentaOrigen', 'Beneficiario', 'Ordenante',
+                  'FechaQR', 'Veredicto', 'Motivos', 'FotoURL']);
     sh.setFrozenRows(1);
   }
   return sh;
 }
 
-// Valida + dedup autoritativo + registra. payload = { datos, vendedor, montoEsperado? }
+// Carpeta de Drive donde se guardan las fotos de evidencia de cada escaneo aceptado.
+function _carpetaFotos() {
+  const NOMBRE = 'YES Comprobantes - Fotos';
+  const it = DriveApp.getFoldersByName(NOMBRE);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(NOMBRE);
+}
+
+// Sube la foto (dataURL base64 que manda el navegador) a Drive y devuelve su URL.
+// Si no viene foto o falla la subida, devuelve '' sin romper el flujo de validacion.
+function _guardarFoto(fotoDataUrl, nombreBase) {
+  if (!fotoDataUrl) return '';
+  try {
+    const match = /^data:(image\/\w+);base64,(.*)$/.exec(fotoDataUrl);
+    if (!match) return '';
+    const bytes = Utilities.base64Decode(match[2]);
+    const blob = Utilities.newBlob(bytes, match[1], 'comprobante_' + nombreBase + '.jpg');
+    const file = _carpetaFotos().createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file.getUrl();
+  } catch (e) {
+    return '';
+  }
+}
+
+// Cuenta cuantos comprobantes RECHAZADO/DUPLICADO tiene ya esa cuenta origen en el historial.
+function _historialSospechoso(data, ctaOrigen) {
+  if (!ctaOrigen) return 0;
+  let n = 0;
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][COL.CTA_ORIGEN] === ctaOrigen &&
+        (data[i][COL.VEREDICTO] === 'RECHAZADO' || data[i][COL.VEREDICTO] === 'DUPLICADO')) {
+      n++;
+    }
+  }
+  return n;
+}
+
+// Valida + dedup + lista negra + registra (incluye rechazos, para auditarlos y
+// que la lista negra funcione). payload = { datos, vendedor, montoEsperado?, foto? }
 function registrarComprobante(payload) {
   const d = payload.datos || {};
   const local = _validarServidor(d, payload.montoEsperado);
-  if (local.veredicto === 'RECHAZADO') return { veredicto: 'RECHAZADO', motivos: local.motivos };
 
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
     const sh = _hoja();
     const data = sh.getDataRange().getValues();
-    const I_UUID = 3, I_COMP = 4;
-    for (let i = 1; i < data.length; i++) {
-      const mismoUUID = d.uuid && data[i][I_UUID] === d.uuid;
-      const mismoComp = d.comprobante && String(data[i][I_COMP]) === String(d.comprobante);
-      if (mismoUUID || mismoComp) {
-        sh.appendRow([new Date(), payload.vendedor || '', d.monto, d.uuid, d.comprobante,
-                      d.ctaDestino, d.beneficiario, d.ordenante,
-                      d.timestamp ? new Date(d.timestamp) : '', 'DUPLICADO', 'Ya existia en fila ' + (i + 1)]);
-        return { veredicto: 'DUPLICADO', motivos: ['Este comprobante ya fue usado (fila ' + (i + 1) + ').'] };
-      }
+
+    if (local.veredicto === 'RECHAZADO') {
+      sh.appendRow([new Date(), payload.vendedor || '', d.monto, d.uuid, d.comprobante,
+                    d.ctaDestino, d.ctaOrigen, d.beneficiario, d.ordenante,
+                    d.timestamp ? new Date(d.timestamp) : '', 'RECHAZADO', local.motivos.join(' | '), '']);
+      return { veredicto: 'RECHAZADO', motivos: local.motivos };
     }
+
+    const mismoComp = d.comprobante && data.some((f, i) => i > 0 && String(f[COL.COMPROBANTE]) === String(d.comprobante));
+    const mismoUUID = d.uuid && data.some((f, i) => i > 0 && f[COL.UUID] === d.uuid);
+    if (mismoUUID || mismoComp) {
+      sh.appendRow([new Date(), payload.vendedor || '', d.monto, d.uuid, d.comprobante,
+                    d.ctaDestino, d.ctaOrigen, d.beneficiario, d.ordenante,
+                    d.timestamp ? new Date(d.timestamp) : '', 'DUPLICADO', 'Ya existia en el registro', '']);
+      return { veredicto: 'DUPLICADO', motivos: ['Este comprobante ya fue usado.'] };
+    }
+
+    // Lista negra: cuenta origen con historial de rechazos/duplicados.
+    let veredictoFinal = local.veredicto;
+    let motivosFinal = local.motivos.slice();
+    const sospechas = _historialSospechoso(data, d.ctaOrigen);
+    if (sospechas >= CONFIG.UMBRAL_LISTA_NEGRA) {
+      veredictoFinal = 'ALERTA';
+      motivosFinal.push('Esta cuenta origen tiene ' + sospechas + ' comprobantes rechazados o duplicados anteriores. Revisar con cuidado.');
+    }
+
+    const fotoUrl = _guardarFoto(payload.foto, d.comprobante || d.uuid || 'sn');
     sh.appendRow([new Date(), payload.vendedor || '', d.monto, d.uuid, d.comprobante,
-                  d.ctaDestino, d.beneficiario, d.ordenante,
-                  d.timestamp ? new Date(d.timestamp) : '', local.veredicto, local.motivos.join(' | ')]);
-    return { veredicto: local.veredicto, motivos: local.motivos, ok: true };
+                  d.ctaDestino, d.ctaOrigen, d.beneficiario, d.ordenante,
+                  d.timestamp ? new Date(d.timestamp) : '', veredictoFinal, motivosFinal.join(' | '), fotoUrl]);
+    return { veredicto: veredictoFinal, motivos: motivosFinal, ok: veredictoFinal !== 'RECHAZADO' };
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * Envia un correo con los comprobantes PENDIENTE_CONCILIACION/ALERTA de las
+ * ultimas 24h. Pensada para correr una vez al dia via trigger (ver crearTriggerDiario).
+ */
+function enviarResumenDiario() {
+  const sh = _hoja();
+  const data = sh.getDataRange().getValues();
+  const desde = Date.now() - 24 * 3600 * 1000;
+  const pendientes = [];
+  for (let i = 1; i < data.length; i++) {
+    const fila = data[i];
+    const veredicto = fila[COL.VEREDICTO];
+    const registrado = fila[COL.REGISTRADO] instanceof Date ? fila[COL.REGISTRADO].getTime() : 0;
+    if ((veredicto === 'PENDIENTE_CONCILIACION' || veredicto === 'ALERTA') && registrado >= desde) {
+      pendientes.push(fila);
+    }
+  }
+  if (!pendientes.length) return;
+
+  const tz = Session.getScriptTimeZone();
+  let cuerpo = 'Comprobantes de las ultimas 24h pendientes de conciliar con el banco (' + pendientes.length + '):\n\n';
+  pendientes.forEach(fila => {
+    cuerpo += '- ' + Utilities.formatDate(fila[COL.REGISTRADO], tz, 'dd/MM HH:mm') +
+      ' | $' + fila[COL.MONTO] + ' | Comprobante ' + fila[COL.COMPROBANTE] +
+      ' | Vendedor ' + fila[COL.VENDEDOR] + ' | ' + fila[COL.VEREDICTO] + '\n';
+  });
+  cuerpo += '\nRevisa la hoja "' + HOJA + '" contra el estado de cuenta del banco.';
+
+  MailApp.sendEmail(CONFIG.EMAIL_CONCILIACION, 'YES · Comprobantes pendientes de conciliar (' + pendientes.length + ')', cuerpo);
+}
+
+/**
+ * Ejecutar UNA SOLA VEZ desde el editor de Apps Script (seleccionar esta funcion
+ * y darle Run) para activar el correo diario de conciliacion.
+ */
+function crearTriggerDiario() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'enviarResumenDiario') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('enviarResumenDiario').timeBased().everyDays(1).atHour(19).create();
 }
