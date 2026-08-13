@@ -166,8 +166,9 @@ let voces=[];
 function cargarVoces(){ voces=speechSynthesis.getVoices(); }
 cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
 
-let ocupado=false, escaneando=false, noHallaDesde=0;
+let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
+const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
 $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
@@ -185,6 +186,7 @@ async function activar(){
   }catch(e){ $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.'; }
 }
 
+// Bucle rapido principal: igual que siempre, imagen completa en cada frame.
 function tick(){
   if(!escaneando) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
@@ -198,9 +200,31 @@ function tick(){
       const t=Date.now();
       if(!noHallaDesde) noHallaDesde=t;
       $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
+      // Si lleva mas de 1.5s sin encontrar nada (QR chico o con logo grande,
+      // como el de DeUna), activa en paralelo un intento de "zoom" digital a
+      // ritmo bajo (no en cada frame), para no afectar el caso normal y rapido.
+      if(t-noHallaDesde>1500 && !zoomTimer){
+        zoomTimer=setInterval(intentoConZoom, 350);
+      }
     }
   }
   requestAnimationFrame(tick);
+}
+
+// Intento lento en paralelo: recorte central a resolucion nativa (zoom digital).
+function intentoConZoom(){
+  if(!escaneando || ocupado || video.readyState!==video.HAVE_ENOUGH_DATA) return;
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const lado=Math.round(Math.min(vw,vh)*0.55);
+  const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
+  zoomCanvas.width=lado; zoomCanvas.height=lado;
+  zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
+  const img=zoomCtx.getImageData(0,0,lado,lado);
+  const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+  if(r && r.data) onScan(r.data);
+}
+function detenerZoom(){
+  if(zoomTimer){ clearInterval(zoomTimer); zoomTimer=null; }
 }
 
 // Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
@@ -221,6 +245,7 @@ async function onScan(texto){
   const datos=parsear(texto);
   if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
   ocupado=true; noHallaDesde=0;
+  detenerZoom();
   const foto=capturarEvidencia();
   $('verify').classList.add('on');
 
@@ -372,7 +397,8 @@ function hablarRechazo(r){
   }catch(e){}
 }
 async function reanudar(){
-  $('result').className='result'; ocupado=false; $('statusText').textContent='Buscando código…';
+  $('result').className='result'; ocupado=false; noHallaDesde=0; detenerZoom();
+  $('statusText').textContent='Buscando código…';
 }
 </script>
 </body>
