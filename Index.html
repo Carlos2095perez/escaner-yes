@@ -285,13 +285,17 @@ function reanudar(){
 }
 
 // Tipos de comprobante conocidos: transferencia bancaria directa (BP_TO_DEUNA)
-// y pago desde billetera DeUna (CASH_OUT_BP). Mismas posiciones de campos,
-// pero el timestamp viene en unidades distintas: segundos vs milisegundos.
-const TIPOS_VALIDOS=['BP_TO_DEUNA','CASH_OUT_BP'];
+// y pagos desde billetera DeUna, que vienen con varios marcadores segun el tipo
+// de operacion (CASH_OUT_BP, CASH_OUT_BP_RECHARGE_BP, etc.) -- misma estructura
+// de campos en todos, asi que se acepta cualquier variante que empiece con
+// CASH_OUT_BP en vez de mantener una lista exacta que hay que actualizar cada
+// vez que aparece un tipo nuevo. El timestamp viene en unidades distintas:
+// segundos (BP_TO_DEUNA) vs milisegundos (CASH_OUT_BP*).
+const RE_TIPO_VALIDO=/^(BP_TO_DEUNA|CASH_OUT_BP)/;
 function parsear(t){
   if(!t) return null;
   const p=t.split(':').map(s=>s.trim());
-  if(p.length<13 || TIPOS_VALIDOS.indexOf(p[1])===-1) return null;
+  if(p.length<13 || !RE_TIPO_VALIDO.test(p[1]||'')) return null;
   const rawTs=p[9];
   const timestamp = rawTs.length>10 ? parseInt(rawTs,10) : parseInt(rawTs,10)*1000; // ya en ms vs segundos
   return {ordenante:p[3], ctaOrigen:p[4], beneficiario:p[6], ctaDestino:p[7],
