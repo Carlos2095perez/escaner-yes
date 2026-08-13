@@ -112,7 +112,6 @@ canvas{display:none}
 <body>
 <video id="video" muted playsinline autoplay></video>
 <canvas id="canvas"></canvas>
-<canvas id="zoomCanvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
   <div class="topbar">
@@ -177,41 +176,33 @@ async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
   $('gateErr').textContent='';
   try{
-    // Pide la mayor resolucion posible: con mas pixeles nativos, el recorte
-    // central (zoom digital) de abajo tiene mucho mas detalle para leer QR chicos.
     const stream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:'environment', width:{ideal:2560}, height:{ideal:2560}}, audio:false});
+      video:{facingMode:'environment', width:{ideal:1280}, height:{ideal:1280}}, audio:false});
     video.srcObject=stream;
     await video.play();
     $('gate').style.display='none'; $('scanUi').classList.add('on');
     escaneando=true; noHallaDesde=0;
-    requestAnimationFrame(tick);
+    setTimeout(tick, INTERVALO_ESCANEO_MS);
   }catch(e){ $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.'; }
 }
 
-// Fraccion del lado menor del video que se usa como "zoom" digital central.
-const ZOOM_LADO=0.5;
-const zoomCanvas=$('zoomCanvas'), zoomCtx=zoomCanvas.getContext('2d',{willReadFrequently:true});
+// El lector no corre en cada frame de video (eso saturaba el celular y
+// congelaba la animacion); corre unas 5 veces por segundo, que alcanza de sobra.
+const INTERVALO_ESCANEO_MS=180;
 
 function tick(){
   if(!escaneando) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
     const vw=video.videoWidth, vh=video.videoHeight;
-    canvas.width=vw; canvas.height=vh;
-    ctx.drawImage(video,0,0,vw,vh);
-    const img=ctx.getImageData(0,0,vw,vh);
-    let r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-
-    if(!r){
-      // Segundo intento: recorte central a resolucion nativa (zoom digital sin
-      // perder nitidez), para QR pequeños o lejanos que el frame completo no resuelve.
-      const lado=Math.round(Math.min(vw,vh)*ZOOM_LADO);
-      const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
-      zoomCanvas.width=lado; zoomCanvas.height=lado;
-      zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
-      const zimg=zoomCtx.getImageData(0,0,lado,lado);
-      r=jsQR(zimg.data, zimg.width, zimg.height, {inversionAttempts:'attemptBoth'});
-    }
+    // Recorte central a resolucion nativa: cubre el area de la guia visual y
+    // le da a QR chicos/lejanos mas detalle por pixel que la imagen completa
+    // (zoom digital), en una sola pasada.
+    const lado=Math.round(Math.min(vw,vh)*0.7);
+    const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
+    canvas.width=lado; canvas.height=lado;
+    ctx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
+    const img=ctx.getImageData(0,0,lado,lado);
+    const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
 
     if(r && r.data){
       onScan(r.data);
@@ -221,7 +212,7 @@ function tick(){
       $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
     }
   }
-  requestAnimationFrame(tick);
+  setTimeout(tick, INTERVALO_ESCANEO_MS);
 }
 
 // Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
