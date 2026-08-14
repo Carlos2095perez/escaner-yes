@@ -52,8 +52,14 @@ canvas{display:none}
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
   border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:11px 18px;font-size:14px;font-family:var(--sora);font-weight:600}
+.status .pill.pill-warn{border-color:rgba(255,221,0,.5)}
 .status .pill .d{width:9px;height:9px;border-radius:50%;background:var(--yellow);animation:blink 1s infinite}
 .status small{display:block;margin-top:10px;color:var(--muted);font-size:12.5px}
+.btn-foto{pointer-events:auto;display:none;align-items:center;gap:8px;margin:14px auto 0;font-family:var(--sora);
+  font-weight:700;font-size:14px;border:1px solid rgba(255,255,255,.35);cursor:pointer;padding:11px 20px;
+  border-radius:999px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
+.btn-foto.show{display:inline-flex}
+.btn-foto:active{transform:scale(.97)}
 
 /* ---------- Pantalla inicio ---------- */
 .gate{position:fixed;inset:0;z-index:6;
@@ -144,8 +150,11 @@ canvas{display:none}
   <div class="status">
     <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
     <small>Centra el QR del comprobante en el recuadro</small>
+    <button class="btn-foto" id="btnFoto">📷 No lee, tomar foto</button>
   </div>
 </div>
+
+<input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
 
 <!-- Inicio -->
 <div class="gate" id="gate">
@@ -193,6 +202,7 @@ const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext
 
 $('btnScan').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
+$('btnFoto').addEventListener('click', ()=>{ $('fileInput').value=''; $('fileInput').click(); });
 
 async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){} // desbloquea voz
@@ -223,17 +233,60 @@ function tick(){
     }else{
       const t=Date.now();
       if(!noHallaDesde) noHallaDesde=t;
-      $('statusText').textContent = (t-noHallaDesde>2500) ? 'Acércate y enfoca el QR…' : 'Buscando código…';
+      const tardando=t-noHallaDesde;
+      // Guia progresiva: primero pide acercar, despues sugiere causas comunes,
+      // y por ultimo ofrece el plan B (tomar foto) para no dejar al operario sin salida.
+      if(tardando>6000){
+        $('statusText').textContent='¿No lee? Evita reflejos y toca "Tomar foto"';
+        $('statusText').parentElement.classList.add('pill-warn');
+        $('btnFoto').classList.add('show');
+      }else if(tardando>2500){
+        $('statusText').textContent='Acércate y enfoca el QR…';
+      }else{
+        $('statusText').textContent='Buscando código…';
+      }
       // Si lleva mas de 1.5s sin encontrar nada (QR chico o con logo grande,
       // como el de DeUna), activa en paralelo un intento de "zoom" digital a
       // ritmo bajo (no en cada frame), para no afectar el caso normal y rapido.
-      if(t-noHallaDesde>1500 && !zoomTimer){
+      if(tardando>1500 && !zoomTimer){
         zoomTimer=setInterval(intentoConZoom, 350);
       }
     }
   }
   requestAnimationFrame(tick);
 }
+
+// Decodifica una foto tomada con la camara nativa (mas confiable que el video en
+// vivo: usa el enfoque/flash propios del celular). Prueba a varias resoluciones.
+function decodificarImagen(img){
+  function intento(maxDim){
+    const c=document.createElement('canvas');
+    const s=Math.min(1, maxDim/Math.max(img.width,img.height));
+    c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+    const cx=c.getContext('2d'); cx.drawImage(img,0,0,c.width,c.height);
+    const d=cx.getImageData(0,0,c.width,c.height);
+    const r=jsQR(d.data,d.width,d.height,{inversionAttempts:'attemptBoth'});
+    return r?r.data:null;
+  }
+  return intento(1200)||intento(1800)||intento(2600)||null;
+}
+
+$('fileInput').addEventListener('change', e=>{
+  const file=e.target.files[0];
+  if(!file) return;
+  const img=new Image();
+  img.onload=()=>{
+    URL.revokeObjectURL(img.src);
+    const texto=decodificarImagen(img);
+    if(!texto){
+      $('statusText').textContent='No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.';
+      return;
+    }
+    onScan(texto);
+  };
+  img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; };
+  img.src=URL.createObjectURL(file);
+});
 
 // Intento lento en paralelo: recorte central a resolucion nativa (zoom digital).
 function intentoConZoom(){
@@ -249,6 +302,8 @@ function intentoConZoom(){
 }
 function detenerZoom(){
   if(zoomTimer){ clearInterval(zoomTimer); zoomTimer=null; }
+  $('btnFoto').classList.remove('show');
+  $('statusText').parentElement.classList.remove('pill-warn');
 }
 
 // Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
