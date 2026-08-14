@@ -175,25 +175,52 @@ let voces=[];
 function cargarVoces(){ voces=speechSynthesis.getVoices(); }
 cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
 
-let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null;
+let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
 $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
-$('btnFoto').addEventListener('click', ()=>{ $('fileInput').value=''; $('fileInput').click(); });
+$('btnFoto').addEventListener('click', ()=>{
+  // Suelta la camara en vivo ANTES de abrir la camara nativa: en iOS, tener
+  // ambas pidiendo la camara a la vez deja la pantalla en negro y el picker
+  // de foto no responde.
+  detenerCamara();
+  $('fileInput').value='';
+  $('fileInput').click();
+});
 
 async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
   $('gateErr').textContent='';
+  const ok=await iniciarCamara();
+  if(ok){ $('gate').style.display='none'; $('scanUi').classList.add('on'); }
+}
+
+// Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
+// activar por primera vez como para reanudar despues de un intento con foto.
+async function iniciarCamara(){
+  detenerCamara();
   try{
-    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
     video.srcObject=stream;
     await video.play();
-    $('gate').style.display='none'; $('scanUi').classList.add('on');
     escaneando=true; noHallaDesde=0;
     requestAnimationFrame(tick);
-  }catch(e){ $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.'; }
+    return true;
+  }catch(e){
+    $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
+    return false;
+  }
+}
+
+// Libera la camara por completo (para pasarsela a la app nativa de fotos,
+// o antes de volver a pedirla limpia).
+function detenerCamara(){
+  escaneando=false;
+  detenerZoom();
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
 }
 
 // Bucle rapido principal: igual que siempre, imagen completa en cada frame.
@@ -246,21 +273,29 @@ function decodificarImagen(img){
   }
   return intento(1200)||intento(1800)||intento(2600)||null;
 }
+function imagenADataUrl(img, maxW){
+  const c=document.createElement('canvas');
+  const s=Math.min(1, maxW/img.width);
+  c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.6);
+}
 
 $('fileInput').addEventListener('change', e=>{
   const file=e.target.files[0];
-  if(!file) return;
+  if(!file){ iniciarCamara(); return; } // cancelo el picker -> vuelve al modo en vivo
   const img=new Image();
   img.onload=()=>{
     URL.revokeObjectURL(img.src);
     const texto=decodificarImagen(img);
     if(!texto){
       $('statusText').textContent='No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.';
+      iniciarCamara();
       return;
     }
-    onScan(texto);
+    onScan(texto, imagenADataUrl(img,700));
   };
-  img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; };
+  img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; iniciarCamara(); };
   img.src=URL.createObjectURL(file);
 });
 
@@ -295,13 +330,16 @@ function capturarEvidencia(){
   }catch(e){ return ''; }
 }
 
-async function onScan(texto){
+async function onScan(texto, fotoOverride){
   if(ocupado) return;
   const datos=parsear(texto);
   if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
   ocupado=true; noHallaDesde=0;
-  detenerZoom();
-  const foto=capturarEvidencia();
+  // Si viene de la camara en vivo, capturamos el frame ANTES de soltar la
+  // camara. Si viene del plan B de foto, ya nos pasan la foto real (mejor
+  // calidad) y la camara ya esta liberada.
+  const foto=fotoOverride || capturarEvidencia();
+  detenerCamara();
   $('verify').classList.add('on');
 
   // 1) Validación inmediata en el navegador (no depende del backend)
@@ -456,8 +494,9 @@ function hablarRechazo(r){
   }catch(e){}
 }
 async function reanudar(){
-  $('result').className='result'; ocupado=false; noHallaDesde=0; detenerZoom();
+  $('result').className='result'; ocupado=false;
   $('statusText').textContent='Buscando código…';
+  await iniciarCamara(); // pide la camara de nuevo, limpia (puede haberse liberado para una foto)
 }
 </script>
 </body>
