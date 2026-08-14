@@ -223,9 +223,18 @@ async function activar(){
 async function iniciarCamara(){
   detenerCamara();
   try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}, audio:false});
+    // ideal (no exact): el navegador se acerca lo mas que pueda sin fallar si
+    // el celular no soporta ese valor exacto. 1920 le da mucha mas resolucion
+    // nativa al QR que el default del navegador (que suele ser bajo), sin
+    // ser tan extremo como para volver a saturar el celular.
+    stream=await navigator.mediaDevices.getUserMedia({video:{
+      facingMode:'environment',
+      width:{ideal:1920}, height:{ideal:1920},
+      focusMode:'continuous'
+    }, audio:false});
     video.srcObject=stream;
     await video.play();
+    aplicarZoomHardwareSiHay();
     escaneando=true; noHallaDesde=0;
     requestAnimationFrame(tick);
     return true;
@@ -233,6 +242,21 @@ async function iniciarCamara(){
     $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
     return false;
   }
+}
+
+// Si el celular soporta zoom optico/de sensor via navegador (mas comun en
+// Android; en iPhone Safari normalmente no esta disponible), lo activa a la
+// mitad de su rango para que el QR se vea mas grande sin acercar el celular
+// a mano. Si no esta disponible, no hace nada -- no rompe nada.
+function aplicarZoomHardwareSiHay(){
+  try{
+    const track=stream.getVideoTracks()[0];
+    const cap=track.getCapabilities && track.getCapabilities();
+    if(cap && cap.zoom){
+      const z=Math.min(cap.zoom.max, Math.max(cap.zoom.min, (cap.zoom.min+cap.zoom.max)/2.2));
+      track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
+    }
+  }catch(e){}
 }
 
 // Libera la camara por completo (para pasarsela a la app nativa de fotos,
