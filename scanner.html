@@ -136,8 +136,22 @@ canvas{display:none}
 .panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer}
 .panel-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .pstat{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:16px;padding:16px}
-.pstat .n{font-family:var(--sora);font-weight:800;font-size:26px}
+.pstat .n{font-family:var(--sora);font-weight:800;font-size:22px}
 .pstat .l{font-size:12px;color:var(--muted);margin-top:2px}
+.pc-hero{background:linear-gradient(135deg,rgba(108,58,237,.4),rgba(59,130,246,.22));border:1px solid var(--azul-70);
+  border-radius:16px;padding:18px 20px;margin-bottom:16px;position:relative}
+.pc-hero .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:600}
+.pc-hero .n{font-family:var(--sora);font-weight:800;font-size:36px;margin-top:4px}
+.pc-badge{position:absolute;top:16px;right:16px;font-family:var(--sora);font-weight:700;font-size:11px;padding:5px 10px;border-radius:999px}
+.pc-badge.ok{background:rgba(0,210,106,.2);color:var(--green-hi)}
+.pc-badge.warn{background:rgba(255,199,0,.2);color:var(--yellow)}
+.pc-badge.bad{background:rgba(255,65,82,.2);color:#ff9aa4}
+.pc-chart-wrap{margin-bottom:16px}
+.pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:600;margin-bottom:8px}
+.pc-chart{width:100%;height:90px;display:block}
+.powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
+  text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
+.powered b{color:rgba(255,255,255,.42);font-weight:700}
 </style>
 </head>
 <body>
@@ -189,6 +203,7 @@ canvas{display:none}
   <button class="btn" id="btnStart" style="display:none">Activar cámara</button>
   <div class="err" id="gateErr"></div>
   <button class="link-tenue" id="btnCambiarCuenta" style="display:none">Cambiar de cuenta</button>
+  <div class="powered">Con tecnología <b>NUVO</b></div>
 </div>
 
 <div class="panel" id="panelCuenta">
@@ -196,6 +211,15 @@ canvas{display:none}
     <div class="panel-head">
       <h3 id="pcNombre">Mi cuenta</h3>
       <button class="panel-close" id="btnCerrarCuenta">✕</button>
+    </div>
+    <div class="pc-hero">
+      <div class="l">Cobrado hoy</div>
+      <div class="n" id="pcMontoHoy">—</div>
+      <div class="pc-badge" id="pcDias"></div>
+    </div>
+    <div class="pc-chart-wrap">
+      <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
+      <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
     </div>
     <div class="panel-stats" id="pcStats"></div>
   </div>
@@ -725,29 +749,60 @@ async function reanudar(){
   await iniciarCamara(); // pide la camara de nuevo, limpia (puede haberse liberado para una foto)
 }
 
-// --- Mi cuenta: dias restantes + estadisticas de escaneos ---
+// --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
 function pstat(n,l){ return '<div class="pstat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+
+// Grafico de barras (SVG, sin librerias) del dinero cobrado en los ultimos 7 dias.
+function renderChart(semana){
+  const svg=$('pcChart');
+  if(!semana || !semana.length){ svg.innerHTML=''; return; }
+  const w=280, h=90, padBottom=16, barW=24;
+  const gap=(w-semana.length*barW)/(semana.length+1);
+  const max=Math.max(1, ...semana.map(d=>d.monto||0));
+  const dias=['D','L','M','M','J','V','S'];
+  let html='<defs><linearGradient id="barGrad" x1="0" y1="1" x2="0" y2="0">'+
+    '<stop offset="0" stop-color="#6C3AED"/><stop offset="1" stop-color="#3B82F6"/></linearGradient></defs>';
+  semana.forEach((d,i)=>{
+    const x=gap+i*(barW+gap);
+    const barH=Math.max(3, ((d.monto||0)/max)*(h-padBottom-10));
+    const y=h-padBottom-barH;
+    const letra=dias[new Date(d.fecha+'T00:00:00').getDay()];
+    html+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW+'" height="'+barH.toFixed(1)+'" rx="5" fill="url(#barGrad)"></rect>';
+    html+='<text x="'+(x+barW/2).toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.5)" font-family="Inter,sans-serif">'+letra+'</text>';
+  });
+  svg.innerHTML=html;
+}
 
 async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
-  $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px">Cargando...</div>';
+  $('pcMontoHoy').textContent='—';
+  $('pcDias').textContent=''; $('pcDias').className='pc-badge';
+  $('pcChart').innerHTML='';
+  $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
   try{
     const { data:{ session } } = await sbc.auth.getSession();
     if(!session) throw new Error('sin sesion');
     const res=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
     const d=await res.json();
     if(!res.ok) throw new Error(d.error||'Error');
+
+    $('pcMontoHoy').textContent = '$'+((d.hoy&&d.hoy.monto)||0).toFixed(2);
+    if(d.diasRestantes!=null){
+      $('pcDias').textContent = d.diasRestantes+(d.diasRestantes===1?' día':' días');
+      $('pcDias').className = 'pc-badge '+(d.diasRestantes>7?'ok':d.diasRestantes>=1?'warn':'bad');
+    }
+
+    renderChart(d.semana);
+
     $('pcStats').innerHTML =
-      pstat(d.diasRestantes!=null ? d.diasRestantes : '—', 'Días restantes') +
-      pstat(d.plan||'—', 'Plan') +
-      pstat(d.totalEscaneos, 'Escaneos totales') +
-      pstat(d.aceptados, 'Aceptados') +
-      pstat(d.rechazados, 'Rechazados') +
-      pstat(d.hoy, 'Hoy');
+      pstat(d.totalEscaneos||0, 'Escaneos totales') +
+      pstat(d.aceptados||0, 'Aceptados') +
+      pstat(d.rechazados||0, 'Rechazados') +
+      pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana');
   }catch(e){
-    $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
+    $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
   }
 }
 
@@ -765,7 +820,7 @@ async function registrarEscaneo(r, d){
     fetch(NUVO_API+'/api/scans/log', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
-      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null })
+      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null, vendedor: vCode || null })
     }).catch(()=>{});
   }catch(e){}
 }
