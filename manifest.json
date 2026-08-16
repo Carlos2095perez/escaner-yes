@@ -1,7 +1,7 @@
 {
-  "name": "INDUYES · Validador de Comprobantes",
-  "short_name": "INDUYES",
-  "description": "Escáner de comprobantes de transferencia (QR) para INDUYES.",
+  "name": "NUVO · Validador de Comprobantes",
+  "short_name": "NUVO",
+  "description": "Escáner de comprobantes de transferencia (QR) por NUVO.",
   "start_url": "./scanner.html",
   "scope": "./",
   "display": "standalone",
