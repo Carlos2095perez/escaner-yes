@@ -156,6 +156,25 @@ canvas{display:none}
 .powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
   text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
 .powered b{color:rgba(255,255,255,.42);font-weight:700}
+
+/* Modo claro automatico: solo para las pantallas sin camara de fondo
+   (login y "Mi cuenta"). La camara en vivo se queda oscura a proposito,
+   para que el HUD se lea bien encima del video sin importar el tema. */
+@media (prefers-color-scheme: light){
+  .gate{background:radial-gradient(90% 55% at 50% 10%, rgba(108,58,237,.08), transparent 60%), #F5F6FA}
+  .gate h1{color:#0A163D}
+  .gate p{color:#5A6076}
+  .gate input{background:#fff;border-color:#E4E7F0;color:#0A163D}
+  .gate input::placeholder{color:#9AA1AA}
+  .link-tenue{color:#5A6076}
+  .powered{color:rgba(10,22,61,.35)}
+  .powered b{color:rgba(10,22,61,.5)}
+  .panel-card{background:#F5F6FA;border-top-color:#E4E7F0}
+  .panel-head h3{color:#0A163D}
+  .panel-close{background:rgba(10,22,61,.08);color:#0A163D}
+  .pstat{background:#fff;border-color:#E4E7F0}
+  .pstat .n{color:#0A163D}
+}
 </style>
 </head>
 <body>
@@ -700,6 +719,8 @@ function mostrar(r,d){
   const ok=(r.veredicto==='PENDIENTE_CONCILIACION'||r.veredicto==='ALERTA'||r.ok);
   const box=$('result'); box.className='result on '+(ok?'ok':'bad');
   $('mark').innerHTML='<path d="'+(ok?CHECK:CROSS)+'"/>';
+  // Vibracion corta al aceptar, patron mas largo/duro al rechazar (util en lugares ruidosos).
+  try{ if(navigator.vibrate) navigator.vibrate(ok ? 60 : [80,60,80,60,120]); }catch(e){}
   if(ok && d){
     const last4=String(d.ctaDestino).slice(-4);
     $('rlabel').textContent='Transferencia recibida';
