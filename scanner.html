@@ -267,7 +267,9 @@ canvas{display:none}
 const GAS_URL = 'PEGA_AQUI_LA_URL_EXEC_DEL_WEBAPP';
 
 const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
-const CONFIG={CUENTA_DESTINO_SUFIJO:'0024', BENEFICIARIO_CLAVES:['INDUYES','INDUSTRIA ALIMENTICIA YES'], VENTANA_HORAS:36};
+// Se llena despues del login con /api/config/validacion (editable desde el
+// panel admin) -- ya no queda fijo en el codigo del escaner.
+let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36};
 const RE_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_HASH=/^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
@@ -366,12 +368,25 @@ async function revisarAcceso(){
       return;
     }
 
+    // Config de validacion (a que cuenta/nombre debe ir el comprobante),
+    // editable desde el panel admin -- se pide en cada login.
+    try{
+      const cfgResp=await fetch(NUVO_API+'/api/config/validacion', { headers:{ Authorization:'Bearer '+session.access_token } });
+      const cfg=await cfgResp.json();
+      if(cfgResp.ok){
+        CONFIG={ NOMBRE_NEGOCIO: cfg.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: cfg.cuentaDestinoSufijo||'',
+                 BENEFICIARIO_CLAVES: cfg.beneficiarioClaves||[], VENTANA_HORAS: cfg.ventanaHoras||36 };
+      }
+    }catch(e){ /* si falla, sigue con los valores por defecto (vacios) */ }
+
     nombreUsuario = m.nombre || '';
     $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
     $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
     $('loginBox').style.display='none'; $('codeBox').style.display='none';
     $('btnCambiarCuenta').style.display='inline-block';
-    $('gateErr').textContent = m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '';
+    $('gateErr').textContent = !CONFIG.CUENTA_DESTINO_SUFIJO
+      ? 'El administrador aún no configuró el negocio en el panel — todos los comprobantes se van a rechazar hasta que lo haga.'
+      : (m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '');
 
     // Si ya activamos la camara antes en este dispositivo, entra directo a
     // escanear sin volver a pedir el tap de "Activar camara".
@@ -655,10 +670,10 @@ function validarLocal(d, montoEsperado){
   // el banco/DeUna nunca expone el número completo, ni al comercio ni en el texto
   // del código. Lo único verificable son los últimos digitos visibles.
   if(!String(d.ctaDestino||'').endsWith(CONFIG.CUENTA_DESTINO_SUFIJO))
-    m.push('La cuenta destino no es INDUYES (...'+String(d.ctaDestino).slice(-4)+').');
+    m.push('La cuenta destino no es '+(CONFIG.NOMBRE_NEGOCIO||'la del negocio')+' (...'+String(d.ctaDestino).slice(-4)+').');
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
-    m.push('El beneficiario no es INDUYES.');
+    m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+'.');
   if(montoEsperado && Number(montoEsperado)>0 && Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
     m.push('El monto no coincide con la factura.');
   if(!(Number(d.monto)>0))
@@ -680,7 +695,7 @@ function validarLocal(d, montoEsperado){
   if(horas>CONFIG.VENTANA_HORAS)
     return {veredicto:'ALERTA', motivos:['El comprobante fue hecho '+tiempoRelativo(ts)+'. Revisar antes de despachar.']};
 
-  return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia INDUYES.'], ok:true};
+  return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'], ok:true};
 }
 
 // Formatea una fecha pasada como texto relativo legible: "hace 1 minuto", "hace 5 horas", etc.
@@ -725,7 +740,7 @@ function mostrar(r,d){
     $('rlabel').textContent='Transferencia recibida';
     animarMonto($('ramount'), d.monto);
     $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
-      fila('Cuenta INDUYES','····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
+      fila('Cuenta '+(CONFIG.NOMBRE_NEGOCIO||'destino'),'····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
       (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
       '<div class="chip">'+(GAS_URL.indexOf('PEGA_AQUI')===-1?'Registrado · pendiente de conciliar con el banco':'Válido · registro en Sheet pendiente de conectar')+'</div>';
     lanzarChispas(); hablar(d, r);
