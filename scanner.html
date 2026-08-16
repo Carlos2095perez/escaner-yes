@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 :root{
   --ink:#0A0B0D; --yellow:#FFDD00; --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
@@ -71,6 +72,11 @@ canvas{display:none}
 .btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:17px;border:0;cursor:pointer;
   padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,221,0,.55);transition:transform .12s}
 .btn:active{transform:scale(.97)}
+.gate #loginBox,.gate #codeBox{pointer-events:auto;display:flex;flex-direction:column;gap:12px;width:100%;max-width:300px}
+.gate input{width:100%;padding:14px;font-size:16px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
+  background:rgba(255,255,255,.06);color:#fff;text-align:center;font-family:var(--inter)}
+.gate input::placeholder{color:var(--muted)}
+.link-tenue{pointer-events:auto;background:none;border:0;color:var(--muted);font-size:13px;text-decoration:underline;cursor:pointer;font-family:var(--inter)}
 
 /* ---------- Verificando ---------- */
 .verify{position:fixed;inset:0;z-index:7;display:none;place-items:center;background:rgba(6,8,10,.86);backdrop-filter:blur(6px)}
@@ -147,10 +153,21 @@ canvas{display:none}
 
 <div class="gate" id="gate">
   <div class="mark">Y</div>
-  <h1>Verificar comprobante</h1>
-  <p>Activa la cámara y apunta al código QR. La lectura es automática y en vivo.</p>
-  <button class="btn" id="btnStart">Activar cámara</button>
+  <h1 id="gateTitle">Iniciar sesión</h1>
+  <p id="gateDesc">Ingresa con el correo que te registró el administrador.</p>
+
+  <div id="loginBox">
+    <input type="email" id="gCorreo" placeholder="tucorreo@ejemplo.com" autocomplete="email">
+    <button class="btn" id="btnEnviarCodigo">Enviar código</button>
+  </div>
+  <div id="codeBox" style="display:none">
+    <input type="text" id="gCodigo" placeholder="123456" inputmode="numeric" autocomplete="one-time-code">
+    <button class="btn" id="btnVerificarCodigo">Verificar código</button>
+  </div>
+
+  <button class="btn" id="btnStart" style="display:none">Activar cámara</button>
   <div class="err" id="gateErr"></div>
+  <button class="link-tenue" id="btnCambiarCuenta" style="display:none">Cambiar de cuenta</button>
 </div>
 
 <script>
@@ -170,6 +187,106 @@ const params=new URLSearchParams(location.search);
 const vCode=params.get('v')||'';
 const montoURL=parseFloat(params.get('monto'))||0;
 $('vendBox').innerHTML = vCode ? 'Vendedor · <b>'+(VEND[vCode]||vCode)+' ('+vCode+')</b>' : '';
+
+// --- Acceso: login por correo (Nuvo) + verificacion de membresia ---
+const NUVO_URL='https://yyqmqgqliecodwpgvkvb.supabase.co';
+const NUVO_ANON_KEY='sb_publishable_yIjlKoZBxA2MO7PvjZWNlg_vuKZ7Uz1';
+const NUVO_API='https://nuvo-validador-transferencias.vercel.app';
+const sbc=supabase.createClient(NUVO_URL, NUVO_ANON_KEY);
+let correoActual='';
+
+function tokenDispositivo(){
+  let t=localStorage.getItem('nuvoDeviceToken');
+  if(!t){ t=crypto.randomUUID(); localStorage.setItem('nuvoDeviceToken', t); }
+  return t;
+}
+
+function mostrarLogin(){
+  $('gateTitle').textContent='Iniciar sesión';
+  $('gateDesc').textContent='Ingresa con el correo que te registró el administrador.';
+  $('loginBox').style.display='flex';
+  $('codeBox').style.display='none';
+  $('btnStart').style.display='none';
+  $('btnCambiarCuenta').style.display='none';
+}
+
+$('btnEnviarCodigo').addEventListener('click', async ()=>{
+  const correo=$('gCorreo').value.trim();
+  if(!correo) return;
+  correoActual=correo;
+  $('gateErr').textContent='Enviando código...';
+  const { error } = await sbc.auth.signInWithOtp({ email: correo, options:{ shouldCreateUser:false } });
+  if(error){ $('gateErr').textContent='Error: '+error.message; return; }
+  $('gateErr').textContent='Código enviado. Revisa tu correo.';
+  $('loginBox').style.display='none';
+  $('codeBox').style.display='flex';
+});
+
+$('btnVerificarCodigo').addEventListener('click', async ()=>{
+  const codigo=$('gCodigo').value.trim();
+  if(!codigo) return;
+  $('gateErr').textContent='Verificando...';
+  const { error } = await sbc.auth.verifyOtp({ email: correoActual, token: codigo, type:'email' });
+  if(error){ $('gateErr').textContent='Error: '+error.message; return; }
+  $('gCodigo').value='';
+  await revisarAcceso();
+});
+
+$('btnCambiarCuenta').addEventListener('click', async ()=>{
+  await sbc.auth.signOut();
+  $('gCorreo').value=''; $('gCodigo').value='';
+  mostrarLogin();
+});
+
+async function revisarAcceso(){
+  const { data:{ session } } = await sbc.auth.getSession();
+  if(!session){ mostrarLogin(); return; }
+
+  $('gateErr').textContent='Verificando acceso...';
+  try{
+    const resp=await fetch(NUVO_API+'/api/membership/status', { headers:{ Authorization:'Bearer '+session.access_token } });
+    const m=await resp.json();
+    if(!resp.ok){
+      $('gateErr').textContent = resp.status===401 ? 'Tu sesión expiró, ingresa de nuevo.' : (m.error||'No se pudo verificar tu acceso.');
+      if(resp.status===401){ await sbc.auth.signOut(); mostrarLogin(); }
+      return;
+    }
+    if(!m.activo){
+      $('gateTitle').textContent='Acceso bloqueado';
+      $('gateDesc').textContent = m.vencida ? 'Tu membresía venció. Contacta al administrador para renovarla.' : 'Tu cuenta está desactivada. Contacta al administrador.';
+      $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
+      $('gateErr').textContent='';
+      $('btnCambiarCuenta').style.display='inline-block';
+      return;
+    }
+
+    const reg=await fetch(NUVO_API+'/api/devices/register', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ tokenDispositivo: tokenDispositivo(), nombreDispositivo: navigator.userAgent.slice(0,60) })
+    });
+    const regBody=await reg.json();
+    if(!reg.ok){
+      $('gateTitle').textContent='Acceso bloqueado';
+      $('gateDesc').textContent = regBody.error || 'No se pudo vincular este dispositivo.';
+      $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
+      $('gateErr').textContent='';
+      $('btnCambiarCuenta').style.display='inline-block';
+      return;
+    }
+
+    $('gateTitle').textContent='Verificar comprobante';
+    $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
+    $('loginBox').style.display='none'; $('codeBox').style.display='none';
+    $('btnStart').style.display='inline-flex';
+    $('btnCambiarCuenta').style.display='inline-block';
+    $('gateErr').textContent = m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '';
+  }catch(e){
+    $('gateErr').textContent='No se pudo verificar tu acceso. Revisa tu conexión e intenta de nuevo.';
+  }
+}
+
+revisarAcceso();
 
 let voces=[];
 function cargarVoces(){ voces=speechSynthesis.getVoices(); }
