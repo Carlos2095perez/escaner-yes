@@ -1,6 +1,6 @@
 {
-  "name": "YES · Validador de Comprobantes",
-  "short_name": "YES Validador",
+  "name": "INDUYES · Validador de Comprobantes",
+  "short_name": "INDUYES",
   "description": "Escáner de comprobantes de transferencia (QR) para INDUYES.",
   "start_url": "./scanner.html",
   "scope": "./",

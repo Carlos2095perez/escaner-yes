@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
-<title>YES · Verificar comprobante</title>
+<title>INDUYES · Verificar comprobante</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#0A163D">
 <link rel="icon" href="icons/icon-192.png">
@@ -64,6 +64,11 @@ canvas{display:none}
   border-radius:999px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
 .btn-foto.show{display:inline-flex}
 .btn-foto:active{transform:scale(.97)}
+.side-controls{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;pointer-events:auto}
+.side-btn{align-items:center;gap:6px;font-family:var(--sora);font-weight:700;font-size:12px;color:#fff;
+  background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.25);padding:9px 12px;border-radius:999px;cursor:pointer;backdrop-filter:blur(6px)}
+.side-btn.active{background:var(--yellow);color:#000;border-color:var(--yellow)}
+.side-btn:active{transform:scale(.95)}
 
 /* ---------- Activación ---------- */
 .gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 10%, rgba(255,199,0,.10), transparent 60%), var(--ink);
@@ -167,7 +172,7 @@ canvas{display:none}
         <path d="M27,97 V27 L93,97 V27" fill="none" stroke="url(#ng)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
         <path d="M40,97 L82,42" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".18"/>
       </svg>
-      YES
+      INDUYES
     </div>
     <div style="display:flex;align-items:center;gap:10px;pointer-events:auto">
       <button class="cuenta-btn" id="btnCuenta">Mi cuenta</button>
@@ -175,6 +180,10 @@ canvas{display:none}
     </div>
   </div>
   <div class="frame"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+  <div class="side-controls">
+    <button class="side-btn" id="btnZoom" style="display:none">🔍 Zoom</button>
+    <button class="side-btn" id="btnLuz" style="display:none">💡 Luz</button>
+  </div>
   <div class="status">
     <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
     <small>Centra el QR del comprobante en el recuadro</small>
@@ -377,6 +386,21 @@ $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
 $('btnCuenta').addEventListener('click', abrirCuenta);
 $('btnCerrarCuenta').addEventListener('click', cerrarCuenta);
+
+$('btnZoom').addEventListener('click', ()=>{
+  zoomAlto=!zoomAlto;
+  aplicarNivelZoom(zoomAlto);
+  $('btnZoom').textContent = zoomAlto ? '🔍 Zoom -' : '🔍 Zoom';
+  $('btnZoom').classList.toggle('active', zoomAlto);
+});
+
+$('btnLuz').addEventListener('click', async ()=>{
+  if(!stream || !torchCaps) return;
+  torchOn=!torchOn;
+  try{ await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){ torchOn=!torchOn; return; }
+  $('btnLuz').textContent = torchOn ? '💡 Luz -' : '💡 Luz';
+  $('btnLuz').classList.toggle('active', torchOn);
+});
 $('btnFoto').addEventListener('click', ()=>{
   // Suelta la camara en vivo ANTES de abrir la camara nativa: en iOS, tener
   // ambas pidiendo la camara a la vez deja la pantalla en negro y el picker
@@ -415,7 +439,7 @@ async function iniciarCamara(){
     }, audio:false});
     video.srcObject=stream;
     await video.play();
-    aplicarZoomHardwareSiHay();
+    detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
     requestAnimationFrame(tick);
     return true;
@@ -425,19 +449,39 @@ async function iniciarCamara(){
   }
 }
 
-// Si el celular soporta zoom optico/de sensor via navegador (mas comun en
-// Android; en iPhone Safari normalmente no esta disponible), lo activa a la
-// mitad de su rango para que el QR se vea mas grande sin acercar el celular
-// a mano. Si no esta disponible, no hace nada -- no rompe nada.
-function aplicarZoomHardwareSiHay(){
+// Zoom optico/de sensor (mas comun en Android; en iPhone Safari normalmente
+// no esta disponible) y linterna, si el celular las soporta via navegador.
+// El zoom arranca bajo por defecto -- el boton "Zoom" activa uno mas fuerte
+// (el nivel que antes era el default) para cuando de verdad haga falta.
+let zoomCaps=null, zoomAlto=false, torchOn=false, torchCaps=false;
+function detectarCapacidadesCamara(){
+  zoomCaps=null; zoomAlto=false; torchOn=false; torchCaps=false;
+  $('btnZoom').style.display='none';
+  $('btnLuz').style.display='none';
   try{
     const track=stream.getVideoTracks()[0];
     const cap=track.getCapabilities && track.getCapabilities();
     if(cap && cap.zoom){
-      const z=Math.min(cap.zoom.max, Math.max(cap.zoom.min, (cap.zoom.min+cap.zoom.max)/2.2));
-      track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
+      zoomCaps=cap.zoom;
+      $('btnZoom').style.display='inline-flex';
+      $('btnZoom').textContent='🔍 Zoom';
+      aplicarNivelZoom(false);
+    }
+    if(cap && cap.torch){
+      torchCaps=true;
+      $('btnLuz').style.display='inline-flex';
+      $('btnLuz').textContent='💡 Luz';
     }
   }catch(e){}
+}
+function aplicarNivelZoom(alto){
+  if(!stream || !zoomCaps) return;
+  const track=stream.getVideoTracks()[0];
+  const rango=zoomCaps.max-zoomCaps.min;
+  const z=alto
+    ? Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango/2.2))   // zoom fuerte (el default anterior)
+    : Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango*0.15)); // zoom bajo, nuevo default
+  track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
 }
 
 // Libera la camara por completo (para pasarsela a la app nativa de fotos,
