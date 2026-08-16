@@ -5,19 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <title>YES · Verificar comprobante</title>
 <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0A0B0D">
+<meta name="theme-color" content="#0A163D">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 :root{
-  --ink:#0A0B0D; --yellow:#FFDD00; --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
+  --ink:#0A163D; --azul-70:#3A4468; --violeta:#6C3AED; --yellow:#FFC700;
+  --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
   --red:#FF4152; --red-lo:#2A0E12; --white:#FFFFFF; --muted:#9AA1AA;
-  --sora:'Sora',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
+  --sora:'Poppins',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
@@ -50,13 +51,13 @@ canvas{display:none}
 .frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
 .laser{position:absolute;left:6%;right:6%;height:3px;top:6%;border-radius:3px;
   background:linear-gradient(90deg,transparent,var(--yellow),transparent);
-  box-shadow:0 0 16px 3px rgba(255,221,0,.8);animation:sweep 2s ease-in-out infinite}
+  box-shadow:0 0 16px 3px rgba(255,199,0,.8);animation:sweep 2s ease-in-out infinite}
 @keyframes sweep{0%{top:6%}50%{top:90%}100%{top:6%}}
 
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
   border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:11px 18px;font-size:14px;font-family:var(--sora);font-weight:600}
-.status .pill.pill-warn{border-color:rgba(255,221,0,.5)}
+.status .pill.pill-warn{border-color:rgba(255,199,0,.5)}
 .status .pill .d{width:9px;height:9px;border-radius:50%;background:var(--yellow);animation:blink 1s infinite}
 .status small{display:block;margin-top:10px;color:var(--muted);font-size:12.5px}
 .btn-foto{pointer-events:auto;display:none;align-items:center;gap:8px;margin:14px auto 0;font-family:var(--sora);
@@ -66,15 +67,13 @@ canvas{display:none}
 .btn-foto:active{transform:scale(.97)}
 
 /* ---------- Activación ---------- */
-.gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 10%, rgba(255,221,0,.10), transparent 60%), var(--ink);
+.gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 10%, rgba(255,199,0,.10), transparent 60%), var(--ink);
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:34px;text-align:center}
-.gate .mark{width:78px;height:78px;border-radius:22px;background:var(--yellow);color:#000;display:grid;place-items:center;
-  font-family:var(--sora);font-weight:800;font-size:32px;box-shadow:0 18px 50px -12px rgba(255,221,0,.45)}
 .gate h1{font-family:var(--sora);font-weight:800;font-size:27px;line-height:1.15}
 .gate p{color:var(--muted);font-size:14.5px;max-width:300px;line-height:1.5}
 .gate .err{color:var(--red);font-size:13px;min-height:18px;max-width:300px}
 .btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:17px;border:0;cursor:pointer;
-  padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,221,0,.55);transition:transform .12s}
+  padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,199,0,.55);transition:transform .12s}
 .btn:active{transform:scale(.97)}
 .gate #loginBox,.gate #codeBox{pointer-events:auto;display:flex;flex-direction:column;gap:12px;width:100%;max-width:300px}
 .gate input{width:100%;padding:14px;font-size:16px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
@@ -123,6 +122,22 @@ canvas{display:none}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
 @media (prefers-reduced-motion:reduce){.laser,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
+
+/* ---------- Mi cuenta ---------- */
+.cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);padding:7px 13px;border-radius:999px;cursor:pointer}
+.cuenta-btn:active{transform:scale(.96)}
+.panel{position:fixed;inset:0;z-index:9;display:none;align-items:flex-end;justify-content:center;background:rgba(4,6,12,.7);backdrop-filter:blur(4px)}
+.panel.on{display:flex}
+.panel-card{width:100%;max-width:420px;background:var(--ink);border-radius:24px 24px 0 0;
+  padding:26px 22px calc(env(safe-area-inset-bottom) + 26px);box-shadow:0 -16px 44px rgba(0,0,0,.5);border-top:1px solid var(--azul-70)}
+.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.panel-head h3{font-family:var(--sora);font-weight:700;font-size:19px}
+.panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer}
+.panel-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pstat{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:16px;padding:16px}
+.pstat .n{font-family:var(--sora);font-weight:800;font-size:26px}
+.pstat .l{font-size:12px;color:var(--muted);margin-top:2px}
 </style>
 </head>
 <body>
@@ -132,7 +147,10 @@ canvas{display:none}
 <div class="scan-ui" id="scanUi">
   <div class="topbar">
     <div class="brand"><span class="dot">Y</span>YES</div>
-    <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
+    <div style="display:flex;align-items:center;gap:10px;pointer-events:auto">
+      <button class="cuenta-btn" id="btnCuenta">Mi cuenta</button>
+      <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
+    </div>
   </div>
   <div class="frame"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
   <div class="status">
@@ -156,7 +174,6 @@ canvas{display:none}
 </div>
 
 <div class="gate" id="gate">
-  <div class="mark">Y</div>
   <h1 id="gateTitle">Iniciar sesión</h1>
   <p id="gateDesc">Ingresa con el correo que te registró el administrador.</p>
 
@@ -172,6 +189,16 @@ canvas{display:none}
   <button class="btn" id="btnStart" style="display:none">Activar cámara</button>
   <div class="err" id="gateErr"></div>
   <button class="link-tenue" id="btnCambiarCuenta" style="display:none">Cambiar de cuenta</button>
+</div>
+
+<div class="panel" id="panelCuenta">
+  <div class="panel-card">
+    <div class="panel-head">
+      <h3 id="pcNombre">Mi cuenta</h3>
+      <button class="panel-close" id="btnCerrarCuenta">✕</button>
+    </div>
+    <div class="panel-stats" id="pcStats"></div>
+  </div>
 </div>
 
 <script>
@@ -198,6 +225,7 @@ const NUVO_ANON_KEY='sb_publishable_yIjlKoZBxA2MO7PvjZWNlg_vuKZ7Uz1';
 const NUVO_API='https://nuvo-validador-transferencias.vercel.app';
 const sbc=supabase.createClient(NUVO_URL, NUVO_ANON_KEY);
 let correoActual='';
+let nombreUsuario='';
 
 function tokenDispositivo(){
   let t=localStorage.getItem('nuvoDeviceToken');
@@ -279,12 +307,21 @@ async function revisarAcceso(){
       return;
     }
 
-    $('gateTitle').textContent='Verificar comprobante';
+    nombreUsuario = m.nombre || '';
+    $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
     $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
     $('loginBox').style.display='none'; $('codeBox').style.display='none';
-    $('btnStart').style.display='inline-flex';
     $('btnCambiarCuenta').style.display='inline-block';
     $('gateErr').textContent = m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '';
+
+    // Si ya activamos la camara antes en este dispositivo, entra directo a
+    // escanear sin volver a pedir el tap de "Activar camara".
+    if(localStorage.getItem('nuvoCameraGranted')==='1'){
+      $('btnStart').style.display='none';
+      activar();
+    }else{
+      $('btnStart').style.display='inline-flex';
+    }
   }catch(e){
     $('gateErr').textContent='No se pudo verificar tu acceso. Revisa tu conexión e intenta de nuevo.';
   }
@@ -306,6 +343,8 @@ const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext
 
 $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
+$('btnCuenta').addEventListener('click', abrirCuenta);
+$('btnCerrarCuenta').addEventListener('click', cerrarCuenta);
 $('btnFoto').addEventListener('click', ()=>{
   // Suelta la camara en vivo ANTES de abrir la camara nativa: en iOS, tener
   // ambas pidiendo la camara a la vez deja la pantalla en negro y el picker
@@ -319,7 +358,13 @@ async function activar(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
   $('gateErr').textContent='';
   const ok=await iniciarCamara();
-  if(ok){ $('gate').style.display='none'; $('scanUi').classList.add('on'); }
+  if(ok){
+    localStorage.setItem('nuvoCameraGranted','1');
+    $('gate').style.display='none'; $('scanUi').classList.add('on');
+  }else{
+    // el auto-inicio pudo fallar si se revoco el permiso -- deja el boton para reintentar a mano.
+    $('btnStart').style.display='inline-flex';
+  }
 }
 
 // Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
@@ -507,6 +552,7 @@ async function onScan(texto, fotoOverride){
 
   $('verify').classList.remove('on');
   mostrar(resultado, datos);
+  registrarEscaneo(resultado, datos);
 }
 
 function validarLocal(d, montoEsperado){
@@ -592,7 +638,7 @@ function mostrar(r,d){
     $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
     $('ramount').textContent=titulo;
     $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
-    hablarRechazo(r);
+    hablarRechazo(r, d);
   }
 }
 function fila(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
@@ -632,20 +678,96 @@ function hablar(d, r){
     const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
 }
-function hablarRechazo(r){
+// Sirena corta (sube y baja de tono) que antecede el aviso hablado de un
+// comprobante rechazado, para llamar la atencion antes de que hable.
+function sonarSirena(){
+  return new Promise(resolve=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.type='sawtooth'; osc.connect(gain); gain.connect(ctx.destination);
+      const t0=ctx.currentTime;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.28, t0+0.05);
+      osc.frequency.setValueAtTime(520, t0);
+      osc.frequency.linearRampToValueAtTime(980, t0+0.28);
+      osc.frequency.linearRampToValueAtTime(520, t0+0.56);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0+0.62);
+      osc.start(t0); osc.stop(t0+0.65);
+      osc.onended=()=>{ ctx.close().catch(()=>{}); resolve(); };
+      setTimeout(resolve, 750); // por si onended no llega a disparar
+    }catch(e){ resolve(); }
+  });
+}
+
+// d = datos del QR leido (para poder mencionar el monto del comprobante
+// rechazado, aunque no se haya aceptado).
+async function hablarRechazo(r, d){
+  await sonarSirena();
   try{
+    const montoTxt = (d && Number(d.monto)>0) ? (' El comprobante es por '+formatoMontoHablado(d.monto)+'.') : '';
     let t='Atención. ';
-    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado. Este comprobante ya fue usado. No despachar.';
+    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No despachar.';
     else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
-    else t+='Comprobante rechazado. '+((r.motivos&&r.motivos[0])||'No se acreditó a la cuenta de Induyes.')+' No despachar.';
+    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||'No se acreditó a la cuenta de Induyes.')+' No despachar.';
     const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.0;
     const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
+}
+function formatoMontoHablado(monto){
+  const ent=Math.floor(monto), cent=Math.round((monto-ent)*100);
+  let t=ent+' dólares'; if(cent>0) t+=' con '+cent+' centavos';
+  return t;
 }
 async function reanudar(){
   $('result').className='result'; ocupado=false;
   $('statusText').textContent='Buscando código…';
   await iniciarCamara(); // pide la camara de nuevo, limpia (puede haberse liberado para una foto)
+}
+
+// --- Mi cuenta: dias restantes + estadisticas de escaneos ---
+function pstat(n,l){ return '<div class="pstat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+
+async function abrirCuenta(){
+  detenerCamara();
+  $('panelCuenta').classList.add('on');
+  $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
+  $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px">Cargando...</div>';
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const res=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    $('pcStats').innerHTML =
+      pstat(d.diasRestantes!=null ? d.diasRestantes : '—', 'Días restantes') +
+      pstat(d.plan||'—', 'Plan') +
+      pstat(d.totalEscaneos, 'Escaneos totales') +
+      pstat(d.aceptados, 'Aceptados') +
+      pstat(d.rechazados, 'Rechazados') +
+      pstat(d.hoy, 'Hoy');
+  }catch(e){
+    $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
+  }
+}
+
+function cerrarCuenta(){
+  $('panelCuenta').classList.remove('on');
+  iniciarCamara();
+}
+
+// Registra cada intento de escaneo (aceptado o no) para las estadisticas de
+// "mi cuenta". No bloquea la UI: si falla, no afecta el resultado mostrado.
+async function registrarEscaneo(r, d){
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) return;
+    fetch(NUVO_API+'/api/scans/log', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null })
+    }).catch(()=>{});
+  }catch(e){}
 }
 </script>
 </body>
