@@ -511,9 +511,11 @@ function aplicarNivelZoom(alto){
   if(!stream || !zoomCaps) return;
   const track=stream.getVideoTracks()[0];
   const rango=zoomCaps.max-zoomCaps.min;
-  const z=alto
-    ? Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango/2.2))   // zoom fuerte (el default anterior)
-    : Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango*0.15)); // zoom bajo, nuevo default
+  // Sin zoom por defecto: la camara capta su campo de vision completo, para
+  // que el lector reconozca el QR en cualquier parte de la pantalla (no solo
+  // dentro del cuadro guia). El zoom fuerte solo se aplica si el usuario lo
+  // pide con el boton (QR chico o lejos).
+  const z=alto ? Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango/2.2)) : zoomCaps.min;
   track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
 }
 
