@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NUVO</string>
+    <string name="title_activity_main">NUVO</string>
+    <string name="package_name">com.nuvo.validador</string>
+    <string name="custom_url_scheme">com.nuvo.validador</string>
+</resources>

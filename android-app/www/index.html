@@ -1,0 +1,1246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>NUVO · Verificar comprobante</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0A163D">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#0A163D; --azul-70:#3A4468; --violeta:#6C3AED; --yellow:#FFC700;
+  --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
+  --red:#FF4152; --red-lo:#2A0E12; --white:#FFFFFF; --muted:#9AA1AA;
+  --sora:'Poppins',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
+canvas{display:none}
+#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover}
+
+/* ---------- Capa de escaneo EN VIVO ---------- */
+.scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;
+  background:radial-gradient(120% 90% at 50% 44%, transparent 30%, rgba(0,0,0,.66) 80%)}
+.scan-ui.on{display:block}
+.topbar{position:absolute;top:calc(env(safe-area-inset-top) + 16px);left:0;right:0;padding:0 20px;
+  display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:8px;font-family:var(--sora);font-weight:800;letter-spacing:.5px}
+.brand svg{width:40px;height:40px;flex-shrink:0}
+.vend{font-size:12px;color:var(--muted);text-align:right;line-height:1.3}
+.vend b{color:#fff;font-weight:600}
+.live{display:flex;align-items:center;gap:6px;font-size:11px;color:#fff;font-family:var(--sora);
+  background:rgba(0,0,0,.35);padding:4px 9px;border-radius:999px;margin-top:6px;justify-content:flex-end}
+.live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1}
+.frame i{position:absolute;width:36px;height:36px;border:3px solid var(--yellow);border-radius:4px;
+  animation:cornPulse 1.6s ease-in-out infinite}
+@keyframes cornPulse{50%{border-color:#fff}}
+.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0}
+.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0}
+.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0}
+.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
+.laser{position:absolute;left:6%;right:6%;height:3px;top:6%;border-radius:3px;
+  background:linear-gradient(90deg,transparent,var(--yellow),transparent);
+  box-shadow:0 0 16px 3px rgba(255,199,0,.8);animation:sweep 2s ease-in-out infinite}
+@keyframes sweep{0%{top:6%}50%{top:90%}100%{top:6%}}
+
+.status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
+.status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
+  border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:11px 18px;font-size:14px;font-family:var(--sora);font-weight:600}
+.status .pill.pill-warn{border-color:rgba(255,199,0,.5)}
+.status .pill .d{width:9px;height:9px;border-radius:50%;background:var(--yellow);animation:blink 1s infinite}
+.status small{display:block;margin-top:10px;color:var(--muted);font-size:12.5px}
+.btn-foto{pointer-events:auto;display:none;align-items:center;gap:8px;margin:14px auto 0;font-family:var(--sora);
+  font-weight:700;font-size:14px;border:1px solid rgba(255,255,255,.35);cursor:pointer;padding:11px 20px;
+  border-radius:999px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
+.btn-foto.show{display:inline-flex}
+.btn-foto:active{transform:scale(.97)}
+.side-controls{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;pointer-events:auto}
+.side-btn{align-items:center;gap:6px;font-family:var(--sora);font-weight:700;font-size:12px;color:#fff;
+  background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.25);padding:9px 12px;border-radius:999px;cursor:pointer;backdrop-filter:blur(6px)}
+.side-btn.active{background:var(--yellow);color:#000;border-color:var(--yellow)}
+.side-btn:active{transform:scale(.95)}
+
+/* ---------- Activación ---------- */
+.gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 10%, rgba(255,199,0,.10), transparent 60%), var(--ink);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;padding:34px;text-align:center}
+.gate h1{font-family:var(--sora);font-weight:800;font-size:27px;line-height:1.15}
+.gate p{color:var(--muted);font-size:14.5px;max-width:300px;line-height:1.5}
+.gate .err{color:var(--red);font-size:13px;min-height:18px;max-width:300px}
+.btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:17px;border:0;cursor:pointer;
+  padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,199,0,.55);transition:transform .12s}
+.btn:active{transform:scale(.97)}
+.gate #loginBox,.gate #codeBox,.gate #montoBox{pointer-events:auto;display:flex;flex-direction:column;gap:12px;width:100%;max-width:300px}
+.gate input.monto{font-family:var(--sora);font-weight:800;font-size:26px}
+.gate input{width:100%;padding:14px;font-size:16px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
+  background:rgba(255,255,255,.06);color:#fff;text-align:center;font-family:var(--inter)}
+.gate input::placeholder{color:var(--muted)}
+.link-tenue{pointer-events:auto;background:none;border:0;color:var(--muted);font-size:13px;text-decoration:underline;cursor:pointer;font-family:var(--inter)}
+
+/* ---------- Confirmando con el servidor (breve, discreto -- sin texto ni
+   fondo oscuro, para que no se sienta como una pantalla de carga aparte) ---------- */
+.verify{position:fixed;inset:0;z-index:7;display:none;place-items:center;background:rgba(6,8,10,.15);pointer-events:none}
+.verify.on{display:grid}
+.spin{width:28px;height:28px;border-radius:50%;border:3px solid rgba(255,255,255,.2);border-top-color:var(--yellow);animation:rot .8s linear infinite}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ---------- Resultado ---------- */
+.result{position:fixed;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;padding:34px;text-align:center;overflow:hidden}
+.result.on{display:flex;animation:fadein .3s ease}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.result.ok{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%)}
+.result.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
+.badge{position:relative;width:150px;height:150px;display:grid;place-items:center;margin-bottom:8px}
+.rings{position:absolute;inset:0;display:grid;place-items:center}
+.rings b{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid var(--green);opacity:0}
+.result.ok .rings b{animation:ping 1.5s ease-out infinite}
+.rings b:nth-child(2){animation-delay:.5s}.rings b:nth-child(3){animation-delay:1s}
+@keyframes ping{0%{transform:scale(.5);opacity:.9}80%{opacity:0}100%{transform:scale(2.1);opacity:0}}
+.disc{width:118px;height:118px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
+  background:radial-gradient(circle at 50% 35%, var(--green-hi), var(--green));box-shadow:0 0 46px -4px var(--green);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+.result.bad .disc{background:radial-gradient(circle at 50% 35%, #ff7d89, var(--red));box-shadow:0 0 46px -4px var(--red)}
+@keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+.disc svg{width:64px;height:64px}
+.disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
+@keyframes draw{to{stroke-dashoffset:0}}
+.rlabel{font-family:var(--sora);font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--green-hi);margin-bottom:2px}
+.result.bad .rlabel{color:#ff9aa4}
+.amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
+.result.bad .amount{font-size:32px}
+.card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;font-size:14px}
+.row+.row{border-top:1px solid rgba(255,255,255,.08)}
+.row .k{color:var(--muted)}.row .v{font-weight:600;font-family:var(--sora);text-align:right}
+.reasons{margin-top:14px;font-size:14px;color:#ffd7db;line-height:1.5;max-width:340px}
+.chip{margin-top:14px;font-size:12px;color:var(--muted);border:1px solid rgba(255,255,255,.14);padding:6px 12px;border-radius:999px}
+.again{margin-top:22px}
+.result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
+.result.bad .again{background:#fff;color:#1a1a1a}
+.spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
+@media (prefers-reduced-motion:reduce){.laser,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
+
+/* ---------- Mi cuenta ---------- */
+.cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);padding:7px 13px;border-radius:999px;cursor:pointer}
+.cuenta-btn:active{transform:scale(.96)}
+.panel{position:fixed;inset:0;z-index:9;display:none;align-items:flex-end;justify-content:center;background:rgba(4,6,12,.7);backdrop-filter:blur(4px)}
+.panel.on{display:flex}
+.panel-card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:var(--ink);border-radius:24px 24px 0 0;
+  padding:24px 20px calc(env(safe-area-inset-bottom) + 24px);box-shadow:0 -16px 44px rgba(0,0,0,.5);border-top:3px solid var(--violeta)}
+.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.panel-head h3{font-family:var(--sora);font-weight:700;font-size:19px}
+.panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;flex-shrink:0}
+
+/* Membresia: su propia tarjeta destacada, no un badge pequeno. */
+.pc-membresia{background:linear-gradient(135deg,var(--violeta) 0%,#3B2A78 75%);border-radius:16px;padding:18px 20px;
+  margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  box-shadow:0 10px 30px -10px rgba(108,58,237,.6)}
+.pc-membresia .l{font-size:11px;color:#E7DBFF;text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:700}
+.pc-membresia .nombre-plan{font-family:var(--sora);font-weight:800;font-size:19px;color:#fff;margin-top:3px;text-transform:capitalize}
+.pc-membresia .vence{font-size:12px;color:#D9CBFF;margin-top:4px}
+.pc-membresia .dias{text-align:center;background:rgba(255,255,255,.16);border-radius:14px;padding:10px 16px;min-width:74px;flex-shrink:0}
+.pc-membresia .dias .num{font-family:var(--sora);font-weight:800;font-size:26px;color:#fff;line-height:1}
+.pc-membresia .dias .num.warn{color:var(--yellow)}
+.pc-membresia .dias .num.bad{color:#FF8FA0}
+.pc-membresia .dias .txt{font-size:10px;color:#E7DBFF;text-transform:uppercase;letter-spacing:.04em;margin-top:3px}
+
+.pc-hero{background:linear-gradient(135deg,#00D26A 0%,#049656 100%);border-radius:16px;padding:18px 20px;margin-bottom:14px;
+  box-shadow:0 10px 30px -10px rgba(0,150,80,.5)}
+.pc-hero .l{font-size:12px;color:#DFFFE9;text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:700}
+.pc-hero .n{font-family:var(--sora);font-weight:800;font-size:36px;margin-top:4px;color:#fff}
+
+.pc-chart-wrap{margin-bottom:16px}
+.pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin-bottom:8px}
+.pc-chart{width:100%;height:90px;display:block}
+
+.panel-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.pstat{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:14px;padding:14px;border-left:4px solid var(--violeta)}
+.pstat.ok{border-left-color:var(--green)}
+.pstat.no{border-left-color:var(--red)}
+.pstat.amarillo{border-left-color:var(--yellow)}
+.pstat .n{font-family:var(--sora);font-weight:800;font-size:21px}
+.pstat .l{font-size:11.5px;color:var(--muted);margin-top:2px;font-weight:600}
+
+.pc-movs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.pc-movs-head .pc-chart-title{margin-bottom:0}
+.pc-movs-botones{display:flex;gap:8px}
+.pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
+.pc-mini-btn:active{transform:scale(.95)}
+.pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
+.pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.pc-filtro input{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
+  border:1px solid var(--azul-70);background:rgba(255,255,255,.06);color:#fff;font-family:var(--inter)}
+.pc-mov-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
+.pc-mov-row:last-child{border-bottom:0}
+.pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
+.pc-mov-txt{flex:1;text-align:left}
+.pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
+.pc-mov-monto.ok{color:var(--green-hi)}
+.pc-mov-monto.no{color:#ff9aa4}
+.pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
+
+.powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
+  text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
+.powered b{color:rgba(255,255,255,.42);font-weight:700}
+
+/* Modo claro automatico: solo para las pantallas sin camara de fondo
+   (login y "Mi cuenta"). La camara en vivo se queda oscura a proposito,
+   para que el HUD se lea bien encima del video sin importar el tema.
+   La membresia y "cobrado hoy" mantienen su gradiente de color en
+   cualquier tema -- son tarjetas de marca, no superficies neutras. */
+@media (prefers-color-scheme: light){
+  .gate{background:radial-gradient(90% 55% at 50% 10%, rgba(108,58,237,.08), transparent 60%), #F5F6FA}
+  .gate h1{color:#0A163D}
+  .gate p{color:#5A6076}
+  .gate input{background:#fff;border-color:#E4E7F0;color:#0A163D}
+  .gate input::placeholder{color:#9AA1AA}
+  .link-tenue{color:#5A6076}
+  .powered{color:rgba(10,22,61,.35)}
+  .powered b{color:rgba(10,22,61,.5)}
+  .panel-card{background:#F5F6FA;border-top-color:var(--violeta)}
+  .panel-head h3{color:#0A163D}
+  .panel-close{background:rgba(10,22,61,.08);color:#0A163D}
+  .pstat{background:#fff;border-color:#E4E7F0}
+  .pstat .n{color:#0A163D}
+  .pc-chart-title{color:#5A6076}
+  .pc-mov-row{border-bottom-color:#E4E7F0}
+  .pc-mov-hora,.pc-mov-txt{color:#0A163D}
+  .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
+  .pc-chart-label{fill:rgba(10,22,61,.55)}
+  .pc-filtro input{background:#fff;border-color:#E4E7F0;color:#0A163D}
+}
+</style>
+</head>
+<body>
+<video id="video" muted playsinline autoplay></video>
+<canvas id="canvas"></canvas>
+
+<div class="scan-ui" id="scanUi">
+  <div class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <defs><linearGradient id="ng" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#9B6BFF"/><stop offset=".55" stop-color="#6C3AED"/><stop offset="1" stop-color="#3B82F6"/>
+        </linearGradient></defs>
+        <path d="M27,97 V27 L93,97 V27" fill="none" stroke="url(#ng)" stroke-width="19" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M40,97 L82,42" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" opacity=".18"/>
+      </svg>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;pointer-events:auto">
+      <button class="cuenta-btn" id="btnCuenta">Mi cuenta</button>
+      <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
+    </div>
+  </div>
+  <div class="frame"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+  <div class="side-controls">
+    <button class="side-btn" id="btnZoom" style="display:none">🔍 Zoom</button>
+    <button class="side-btn" id="btnLuz" style="display:none">💡 Luz</button>
+  </div>
+  <div class="status">
+    <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
+    <small>Centra el QR del comprobante en el recuadro</small>
+    <button class="btn-foto" id="btnFoto">📷 No lee, tomar foto</button>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+
+<div class="verify" id="verify"><div class="spin"></div></div>
+
+<div class="result" id="result">
+  <div class="badge"><div class="rings"><b></b><b></b><b></b></div>
+    <div class="disc"><svg viewBox="0 0 52 52" id="mark"></svg></div></div>
+  <div class="rlabel" id="rlabel"></div>
+  <div class="amount" id="ramount"></div>
+  <div id="rbody"></div>
+  <button class="btn again" id="btnAgain">Escanear otro</button>
+</div>
+
+<div class="gate" id="gate">
+  <h1 id="gateTitle">Iniciar sesión</h1>
+  <p id="gateDesc">Ingresa con el correo que te registró el administrador.</p>
+
+  <div id="loginBox">
+    <input type="email" id="gCorreo" placeholder="tucorreo@ejemplo.com" autocomplete="email">
+    <button class="btn" id="btnEnviarCodigo">Enviar código</button>
+  </div>
+  <div id="codeBox" style="display:none">
+    <input type="text" id="gCodigo" placeholder="123456" inputmode="numeric" autocomplete="one-time-code">
+    <button class="btn" id="btnVerificarCodigo">Verificar código</button>
+  </div>
+
+  <button class="btn" id="btnStart" style="display:none">Activar cámara</button>
+  <div class="err" id="gateErr"></div>
+  <div class="powered">Con tecnología <b>NUVO</b></div>
+</div>
+
+<div class="gate" id="montoGate" style="display:none">
+  <h1>¿Cuánto vas a cobrar?</h1>
+  <p>Escribe el monto exacto de la venta antes de escanear. El comprobante se rechaza si el monto no coincide — así evitamos que una transferencia real pero por un valor menor pase como si fuera la venta completa.</p>
+  <div id="montoBox">
+    <input type="number" id="inMonto" class="monto" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+    <button class="btn" id="btnConfirmarMonto">Confirmar y escanear</button>
+  </div>
+  <div class="err" id="montoErr"></div>
+</div>
+
+<div class="panel" id="panelCuenta">
+  <div class="panel-card">
+    <div class="panel-head">
+      <h3 id="pcNombre">Mi cuenta</h3>
+      <button class="panel-close" id="btnCerrarCuenta">✕</button>
+    </div>
+
+    <div class="pc-membresia">
+      <div>
+        <div class="l">Membresía</div>
+        <div class="nombre-plan" id="pcPlan">—</div>
+        <div class="vence" id="pcVence"></div>
+      </div>
+      <div class="dias">
+        <div class="num" id="pcDiasNum">—</div>
+        <div class="txt">días</div>
+      </div>
+    </div>
+
+    <div class="pc-hero">
+      <div class="l">Cobrado hoy</div>
+      <div class="n" id="pcMontoHoy">—</div>
+    </div>
+
+    <div class="pc-chart-wrap">
+      <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
+      <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
+    </div>
+
+    <div class="panel-stats" id="pcStats"></div>
+
+    <div class="pc-movs-head">
+      <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
+    </div>
+    <div class="pc-filtro">
+      <input type="date" id="pcDesde">
+      <input type="date" id="pcHasta">
+      <button class="pc-mini-btn" id="btnPcBuscar">Buscar</button>
+    </div>
+    <div class="pc-movs-botones" style="margin-bottom:12px">
+      <button class="pc-mini-btn" id="btnPcExcel">Descargar Excel</button>
+      <button class="pc-mini-btn" id="btnPcPdf">Descargar PDF</button>
+    </div>
+    <div id="pcMovs"></div>
+  </div>
+</div>
+
+<script>
+const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
+// Se llena despues del login con /api/config/validacion (editable desde el
+// panel admin) -- ya no queda fijo en el codigo del escaner.
+let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36};
+const RE_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RE_HASH=/^[0-9a-f]{16,}$/i;
+const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
+const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35';
+const $=id=>document.getElementById(id);
+const params=new URLSearchParams(location.search);
+const vCode=params.get('v')||'';
+const montoURL=parseFloat(params.get('monto'))||0;
+$('vendBox').innerHTML = vCode ? 'Vendedor · <b>'+(VEND[vCode]||vCode)+' ('+vCode+')</b>' : '';
+
+// --- Acceso: login por correo (Nuvo) + verificacion de membresia ---
+const NUVO_URL='https://yyqmqgqliecodwpgvkvb.supabase.co';
+const NUVO_ANON_KEY='sb_publishable_yIjlKoZBxA2MO7PvjZWNlg_vuKZ7Uz1';
+const NUVO_API='https://nuvo-validador-transferencias.vercel.app';
+const sbc=supabase.createClient(NUVO_URL, NUVO_ANON_KEY);
+let correoActual='';
+let nombreUsuario='';
+
+function tokenDispositivo(){
+  let t=localStorage.getItem('nuvoDeviceToken');
+  if(!t){ t=crypto.randomUUID(); localStorage.setItem('nuvoDeviceToken', t); }
+  return t;
+}
+
+function mostrarLogin(){
+  $('gateTitle').textContent='Iniciar sesión';
+  $('gateDesc').textContent='Ingresa con el correo que te registró el administrador.';
+  $('loginBox').style.display='flex';
+  $('codeBox').style.display='none';
+  $('btnStart').style.display='none';
+}
+
+$('btnEnviarCodigo').addEventListener('click', async ()=>{
+  const correo=$('gCorreo').value.trim();
+  if(!correo) return;
+  correoActual=correo;
+  $('gateErr').textContent='Enviando código...';
+  const { error } = await sbc.auth.signInWithOtp({ email: correo, options:{ shouldCreateUser:false } });
+  if(error){ $('gateErr').textContent='Error: '+error.message; return; }
+  $('gateErr').textContent='Código enviado. Revisa tu correo.';
+  $('loginBox').style.display='none';
+  $('codeBox').style.display='flex';
+});
+
+$('btnVerificarCodigo').addEventListener('click', async ()=>{
+  const codigo=$('gCodigo').value.trim();
+  if(!codigo) return;
+  $('gateErr').textContent='Verificando...';
+  const { error } = await sbc.auth.verifyOtp({ email: correoActual, token: codigo, type:'email' });
+  if(error){ $('gateErr').textContent='Error: '+error.message; return; }
+  $('gCodigo').value='';
+  await revisarAcceso();
+});
+
+// Cache de la ultima verificacion de acceso que salio bien (nombre, config
+// de validacion, aviso de vencimiento) -- permite entrar directo a escanear
+// en cada apertura de la app SIN mostrar "Verificando acceso...", en vez de
+// repetir esa espera cada vez. La membresia se sigue revisando, pero en
+// segundo plano (ver verificarYAplicar) -- si de verdad esta vencida o
+// desactivada, ahi SI se interrumpe y se bloquea; mientras tanto se confia
+// en la sesion ya iniciada.
+const CACHE_ACCESO = 'nuvoAccesoCache';
+function guardarCacheAcceso(info){ try{ localStorage.setItem(CACHE_ACCESO, JSON.stringify(info)); }catch(e){} }
+function leerCacheAcceso(){ try{ return JSON.parse(localStorage.getItem(CACHE_ACCESO) || 'null'); }catch(e){ return null; } }
+
+function aplicarAcceso(info){
+  nombreUsuario = info.nombre || '';
+  CONFIG = info.cfg;
+  $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
+  $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
+  $('loginBox').style.display='none'; $('codeBox').style.display='none';
+  $('gateErr').textContent = !CONFIG.CUENTA_DESTINO_SUFIJO
+    ? 'El administrador aún no configuró el negocio en el panel — todos los comprobantes se van a rechazar hasta que lo haga.'
+    : (info.avisoProximoAVencer ? ('Tu membresía vence en '+info.diasRestantes+' día(s).') : '');
+
+  // Si ya activamos la camara antes en este dispositivo, entra directo a
+  // escanear (no hace falta el tap de "Activar camara" de nuevo). Si el
+  // modo de este usuario es 'monto', ademas se pide el monto antes de cada
+  // escaneo -- ver comenzarEscaneo().
+  if(localStorage.getItem('nuvoCameraGranted')==='1'){
+    $('btnStart').style.display='none';
+    comenzarEscaneo(montoURL);
+  }else{
+    $('btnStart').style.display='inline-flex';
+  }
+}
+
+function bloquear(titulo, desc){
+  detenerCamara();
+  $('scanUi').classList.remove('on');
+  $('montoGate').style.display='none';
+  $('gate').style.display='flex';
+  $('gateTitle').textContent=titulo;
+  $('gateDesc').textContent=desc;
+  $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
+  $('gateErr').textContent='';
+}
+
+// segundoPlano=false: primera verificacion (sin cache, o sin camara
+// activada todavia) -- puede mostrar "Verificando..." y bloquear pantalla.
+// segundoPlano=true: la app ya esta mostrando/escaneando con datos de la
+// cache -- esto solo actualiza esos datos en silencio, y unicamente
+// interrumpe si el servidor confirma que el acceso ya no es valido.
+async function verificarYAplicar(session, segundoPlano){
+  try{
+    const resp=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
+    const m=await resp.json();
+    if(!resp.ok){
+      if(resp.status===401){ await sbc.auth.signOut(); localStorage.removeItem(CACHE_ACCESO); mostrarLogin(); return; }
+      if(!segundoPlano) $('gateErr').textContent = m.error || 'No se pudo verificar tu acceso.';
+      return;
+    }
+    if(!m.activo){
+      bloquear('Acceso bloqueado', m.vencida ? 'Tu membresía venció. Contacta al administrador para renovarla.' : 'Tu cuenta está desactivada. Contacta al administrador.');
+      return;
+    }
+
+    const reg=await fetch(NUVO_API+'/api/devices?accion=registrar', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ tokenDispositivo: tokenDispositivo(), nombreDispositivo: navigator.userAgent.slice(0,60) })
+    });
+    const regBody=await reg.json();
+    if(!reg.ok){
+      bloquear('Acceso bloqueado', regBody.error || 'No se pudo vincular este dispositivo.');
+      return;
+    }
+
+    // Config de validacion (a que cuenta/nombre debe ir el comprobante),
+    // editable desde el panel admin -- se pide en cada verificacion.
+    let cfg={ NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36, MODO_ESCANEO:'monto' };
+    try{
+      const cfgResp=await fetch(NUVO_API+'/api/config/validacion', { headers:{ Authorization:'Bearer '+session.access_token } });
+      const c=await cfgResp.json();
+      if(cfgResp.ok){
+        cfg={ NOMBRE_NEGOCIO: c.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: c.cuentaDestinoSufijo||'',
+              // El beneficiario del comprobante se compara en mayusculas (ver
+              // validarLocal) -- si no, el nombre que el admin tipeo con
+              // mayusculas/minusculas normales nunca coincide.
+              BENEFICIARIO_CLAVES: (c.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: c.ventanaHoras||36,
+              // Elegido por el admin en el perfil de este usuario: 'monto'
+              // pide el monto de la venta antes de escanear (mas seguro),
+              // 'directo' escanea sin pedir nada (mas rapido).
+              MODO_ESCANEO: c.modoEscaneo==='directo' ? 'directo' : 'monto' };
+      }
+    }catch(e){ /* si falla, sigue con los valores por defecto (vacios) */ }
+
+    const info = { nombre: m.nombre, cfg, avisoProximoAVencer: m.avisoProximoAVencer, diasRestantes: m.diasRestantes };
+    guardarCacheAcceso(info);
+
+    if(segundoPlano){
+      CONFIG = cfg; nombreUsuario = m.nombre || '';
+    }else{
+      aplicarAcceso(info);
+    }
+  }catch(e){
+    if(!segundoPlano) $('gateErr').textContent='No se pudo verificar tu acceso. Revisa tu conexión e intenta de nuevo.';
+    // en segundo plano, una falla de red no interrumpe nada -- se sigue
+    // confiando en los datos de la cache hasta el proximo intento.
+  }
+}
+
+async function revisarAcceso(){
+  const { data:{ session } } = await sbc.auth.getSession();
+  if(!session){ mostrarLogin(); return; }
+
+  const cache = leerCacheAcceso();
+  if(cache && localStorage.getItem('nuvoCameraGranted')==='1'){
+    aplicarAcceso(cache);
+    verificarYAplicar(session, true);
+  }else{
+    $('gateErr').textContent='Verificando acceso...';
+    await verificarYAplicar(session, false);
+  }
+}
+
+revisarAcceso();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+
+let voces=[];
+function cargarVoces(){ voces=speechSynthesis.getVoices(); }
+cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
+
+let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null;
+const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
+const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
+
+$('btnStart').addEventListener('click', activar);
+$('btnAgain').addEventListener('click', reanudar);
+$('btnCuenta').addEventListener('click', abrirCuenta);
+$('btnCerrarCuenta').addEventListener('click', cerrarCuenta);
+
+$('btnZoom').addEventListener('click', ()=>{
+  zoomAlto=!zoomAlto;
+  aplicarNivelZoom(zoomAlto);
+  $('btnZoom').textContent = zoomAlto ? '🔍 Zoom -' : '🔍 Zoom';
+  $('btnZoom').classList.toggle('active', zoomAlto);
+});
+
+$('btnLuz').addEventListener('click', async ()=>{
+  if(!stream || !torchCaps) return;
+  torchOn=!torchOn;
+  try{ await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){ torchOn=!torchOn; return; }
+  $('btnLuz').textContent = torchOn ? '💡 Luz -' : '💡 Luz';
+  $('btnLuz').classList.toggle('active', torchOn);
+});
+$('btnFoto').addEventListener('click', ()=>{
+  // Suelta la camara en vivo ANTES de abrir la camara nativa: en iOS, tener
+  // ambas pidiendo la camara a la vez deja la pantalla en negro y el picker
+  // de foto no responde.
+  detenerCamara();
+  $('fileInput').value='';
+  $('fileInput').click();
+});
+
+// El monto de la venta se pide antes de escanear (primera vez y cada
+// "Escanear otro") SOLO si el admin configuro este perfil en modo 'monto'
+// (ver CONFIG.MODO_ESCANEO) -- sin esto, un comprobante real pero por un
+// valor menor al de la venta (ej. una transferencia de $0.01 a la cuenta
+// correcta) pasaba como valido porque nada obligaba a comparar contra lo
+// que se estaba cobrando. En modo 'directo' se escanea sin pedir nada,
+// como antes -- decision del admin, no algo forzado para todos los clientes.
+let montoActual=0;
+function mostrarMontoGate(prellenado){
+  $('inMonto').value = prellenado>0 ? prellenado.toFixed(2) : '';
+  $('montoErr').textContent='';
+  $('gate').style.display='none';
+  $('montoGate').style.display='flex';
+  setTimeout(()=>$('inMonto').focus(), 50);
+}
+
+// Punto de entrada unico para arrancar un escaneo (activar por primera vez,
+// o el siguiente despues de "Escanear otro"): decide si hace falta pedir el
+// monto primero, segun el modo configurado para este usuario.
+function comenzarEscaneo(prellenado){
+  if(CONFIG.MODO_ESCANEO==='directo'){
+    montoActual=0;
+    comenzarCamara();
+  }else{
+    mostrarMontoGate(prellenado);
+  }
+}
+
+function activar(){ comenzarEscaneo(montoURL); }
+
+async function comenzarCamara(){
+  try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
+  const ok=await iniciarCamara();
+  if(ok){
+    localStorage.setItem('nuvoCameraGranted','1');
+    $('montoGate').style.display='none'; $('gate').style.display='none'; $('scanUi').classList.add('on');
+  }else{
+    // el permiso de camara pudo fallar/revocarse -- vuelve a la pantalla de activacion.
+    $('montoGate').style.display='none';
+    $('gate').style.display='flex';
+    $('btnStart').style.display='inline-flex';
+    $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
+  }
+}
+
+$('btnConfirmarMonto').addEventListener('click', async ()=>{
+  const v=parseFloat($('inMonto').value);
+  if(!(v>0)){ $('montoErr').textContent='Ingresa un monto válido, mayor a 0.'; return; }
+  montoActual=v;
+  $('montoErr').textContent='';
+  await comenzarCamara();
+});
+
+// Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
+// activar por primera vez como para reanudar despues de un intento con foto.
+async function iniciarCamara(){
+  detenerCamara();
+  try{
+    // ideal (no exact): el navegador se acerca lo mas que pueda sin fallar si
+    // el celular no soporta ese valor exacto. 1920 le da mucha mas resolucion
+    // nativa al QR que el default del navegador (que suele ser bajo), sin
+    // ser tan extremo como para volver a saturar el celular.
+    stream=await navigator.mediaDevices.getUserMedia({video:{
+      facingMode:'environment',
+      width:{ideal:1920}, height:{ideal:1920},
+      focusMode:'continuous'
+    }, audio:false});
+    video.srcObject=stream;
+    await video.play();
+    detectarCapacidadesCamara();
+    escaneando=true; noHallaDesde=0;
+    requestAnimationFrame(tick);
+    return true;
+  }catch(e){
+    $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
+    return false;
+  }
+}
+
+// Zoom optico/de sensor (mas comun en Android; en iPhone Safari normalmente
+// no esta disponible) y linterna, si el celular las soporta via navegador.
+// El zoom arranca bajo por defecto -- el boton "Zoom" activa uno mas fuerte
+// (el nivel que antes era el default) para cuando de verdad haga falta.
+let zoomCaps=null, zoomAlto=false, torchOn=false, torchCaps=false;
+function detectarCapacidadesCamara(){
+  zoomCaps=null; zoomAlto=false; torchOn=false; torchCaps=false;
+  $('btnZoom').style.display='none';
+  $('btnLuz').style.display='none';
+  try{
+    const track=stream.getVideoTracks()[0];
+    const cap=track.getCapabilities && track.getCapabilities();
+    if(cap && cap.zoom){
+      zoomCaps=cap.zoom;
+      $('btnZoom').style.display='inline-flex';
+      $('btnZoom').textContent='🔍 Zoom';
+      aplicarNivelZoom(false);
+    }
+    if(cap && cap.torch){
+      torchCaps=true;
+      $('btnLuz').style.display='inline-flex';
+      $('btnLuz').textContent='💡 Luz';
+    }
+  }catch(e){}
+}
+function aplicarNivelZoom(alto){
+  if(!stream || !zoomCaps) return;
+  const track=stream.getVideoTracks()[0];
+  const rango=zoomCaps.max-zoomCaps.min;
+  // Sin zoom por defecto: la camara capta su campo de vision completo, para
+  // que el lector reconozca el QR en cualquier parte de la pantalla (no solo
+  // dentro del cuadro guia). El zoom fuerte solo se aplica si el usuario lo
+  // pide con el boton (QR chico o lejos).
+  const z=alto ? Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango/2.2)) : zoomCaps.min;
+  track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
+}
+
+// Libera la camara por completo (para pasarsela a la app nativa de fotos,
+// o antes de volver a pedirla limpia).
+function detenerCamara(){
+  escaneando=false;
+  detenerZoom();
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  video.srcObject=null;
+}
+
+// Bucle rapido principal: igual que siempre, imagen completa en cada frame.
+function tick(){
+  if(!escaneando) return;
+  if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+    const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+    if(r && r.data){
+      onScan(r.data);
+    }else{
+      const t=Date.now();
+      if(!noHallaDesde) noHallaDesde=t;
+      const tardando=t-noHallaDesde;
+      // Guia progresiva: primero pide acercar, despues sugiere causas comunes,
+      // y por ultimo ofrece el plan B (tomar foto) para no dejar al operario sin salida.
+      if(tardando>6000){
+        $('statusText').textContent='¿No lee? Evita reflejos y toca "Tomar foto"';
+        $('statusText').parentElement.classList.add('pill-warn');
+        $('btnFoto').classList.add('show');
+      }else if(tardando>2500){
+        $('statusText').textContent='Acércate y enfoca el QR…';
+      }else{
+        $('statusText').textContent='Buscando código…';
+      }
+      // Si lleva mas de 1.5s sin encontrar nada (QR chico o con logo grande,
+      // como el de DeUna), activa en paralelo un intento de "zoom" digital a
+      // ritmo bajo (no en cada frame), para no afectar el caso normal y rapido.
+      if(tardando>1500 && !zoomTimer){
+        zoomTimer=setInterval(intentoConZoom, 350);
+      }
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// Decodifica una foto tomada con la camara nativa (mas confiable que el video en
+// vivo: usa el enfoque/flash propios del celular). Prueba a varias resoluciones.
+function decodificarImagen(img){
+  function intento(maxDim){
+    const c=document.createElement('canvas');
+    const s=Math.min(1, maxDim/Math.max(img.width,img.height));
+    c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+    const cx=c.getContext('2d'); cx.drawImage(img,0,0,c.width,c.height);
+    const d=cx.getImageData(0,0,c.width,c.height);
+    const r=jsQR(d.data,d.width,d.height,{inversionAttempts:'attemptBoth'});
+    return r?r.data:null;
+  }
+  return intento(1200)||intento(1800)||intento(2600)||null;
+}
+function imagenADataUrl(img, maxW){
+  const c=document.createElement('canvas');
+  const s=Math.min(1, maxW/img.width);
+  c.width=Math.round(img.width*s); c.height=Math.round(img.height*s);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',0.6);
+}
+
+$('fileInput').addEventListener('change', e=>{
+  const file=e.target.files[0];
+  if(!file){ iniciarCamara(); return; } // cancelo el picker -> vuelve al modo en vivo
+  const img=new Image();
+  img.onload=()=>{
+    URL.revokeObjectURL(img.src);
+    const texto=decodificarImagen(img);
+    if(!texto){
+      $('statusText').textContent='No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.';
+      iniciarCamara();
+      return;
+    }
+    onScan(texto, imagenADataUrl(img,700));
+  };
+  img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; iniciarCamara(); };
+  img.src=URL.createObjectURL(file);
+});
+
+// Intento lento en paralelo: recorte central a resolucion nativa (zoom digital).
+function intentoConZoom(){
+  if(!escaneando || ocupado || video.readyState!==video.HAVE_ENOUGH_DATA) return;
+  const vw=video.videoWidth, vh=video.videoHeight;
+  const lado=Math.round(Math.min(vw,vh)*0.55);
+  const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
+  zoomCanvas.width=lado; zoomCanvas.height=lado;
+  zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
+  const img=zoomCtx.getImageData(0,0,lado,lado);
+  const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+  if(r && r.data) onScan(r.data);
+}
+function detenerZoom(){
+  if(zoomTimer){ clearInterval(zoomTimer); zoomTimer=null; }
+  $('btnFoto').classList.remove('show');
+  $('statusText').parentElement.classList.remove('pill-warn');
+}
+
+// Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
+// Se reduce a un ancho maximo para que el envio sea rapido.
+const evidCanvas=document.createElement('canvas');
+function capturarEvidencia(){
+  try{
+    const vw=video.videoWidth, vh=video.videoHeight, maxW=700;
+    const s=Math.min(1, maxW/vw);
+    evidCanvas.width=Math.round(vw*s); evidCanvas.height=Math.round(vh*s);
+    evidCanvas.getContext('2d').drawImage(video,0,0,evidCanvas.width,evidCanvas.height);
+    return evidCanvas.toDataURL('image/jpeg',0.6);
+  }catch(e){ return ''; }
+}
+
+async function onScan(texto, fotoOverride){
+  if(ocupado) return;
+  const datos=parsear(texto);
+  if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
+  ocupado=true; noHallaDesde=0;
+  // Si viene de la camara en vivo, capturamos el frame ANTES de soltar la
+  // camara. Si viene del plan B de foto, ya nos pasan la foto real (mejor
+  // calidad) y la camara ya esta liberada.
+  const foto=fotoOverride || capturarEvidencia();
+  detenerCamara();
+  $('verify').classList.add('on');
+
+  // 1) Validación inmediata en el navegador (nombre, cuenta, monto, formato,
+  //    ventana horaria -- no depende del backend, es instantánea).
+  let resultado=validarLocal(datos, montoActual);
+
+  // 2) Si localmente el comprobante parece válido, se confirma con el backend
+  //    ANTES de mostrar nada: solo el servidor puede saber si este mismo
+  //    comprobante ya se uso antes (en este dispositivo, en otro, hoy o
+  //    cualquier día). Esto reemplaza la validación local, no se limita a
+  //    complementarla -- si el backend dice que es duplicado, gana el backend.
+  let confirmadoServidor=false;
+  if(resultado.veredicto==='PENDIENTE_CONCILIACION' || resultado.veredicto==='ALERTA'){
+    try{
+      const { data:{ session } } = await sbc.auth.getSession();
+      const resp=await fetch(NUVO_API+'/api/scans/log', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
+        body: JSON.stringify({
+          veredicto: resultado.veredicto,
+          monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
+          vendedor: vCode || null,
+          comprobante: datos.comprobante || null,
+          qrUuid: datos.uuid || null,
+          qrHash: datos.hash || null,
+        }),
+      });
+      const body=await resp.json().catch(()=>({}));
+      if(resp.ok){
+        confirmadoServidor=true;
+        if(body.duplicado){
+          resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
+        }
+      }else{
+        resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) };
+      }
+    }catch(e){
+      // Sin conexion: no se puede verificar que el comprobante no este
+      // repetido. No se bloquea la venta (el negocio tiene que poder seguir
+      // vendiendo offline), pero se avisa en vez de aceptarlo en silencio.
+      resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) };
+    }
+  }
+
+  $('verify').classList.remove('on');
+  mostrar(resultado, datos);
+  // Si el backend ya registro este escaneo (dedup incluido), no se vuelve a
+  // registrar aparte -- solo se loguean por separado los rechazados locales
+  // (nombre/cuenta/monto/formato invalido), que nunca llegaron al backend.
+  if(!confirmadoServidor) registrarEscaneo(resultado, datos);
+}
+
+function validarLocal(d, montoEsperado){
+  const m=[];
+  // La cuenta destino viene ENMASCARADA dentro del propio QR (ej. "******0024"):
+  // el banco/DeUna nunca expone el número completo, ni al comercio ni en el texto
+  // del código. Lo único verificable son los últimos digitos visibles.
+  if(!String(d.ctaDestino||'').endsWith(CONFIG.CUENTA_DESTINO_SUFIJO))
+    m.push('La cuenta destino no es '+(CONFIG.NOMBRE_NEGOCIO||'la del negocio')+' (...'+String(d.ctaDestino).slice(-4)+').');
+  const benef=String(d.beneficiario||'').toUpperCase();
+  if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
+    m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+' (el comprobante dice: "'+(d.beneficiario||'—')+'").');
+  // El monto de la venta solo se exige en modo 'monto' (ver mostrarMontoGate
+  // y CONFIG.MODO_ESCANEO) -- en 'directo' el admin elegio no pedirlo, y el
+  // comprobante se acepta sin comparar montos.
+  if(CONFIG.MODO_ESCANEO!=='directo'){
+    if(!(Number(montoEsperado)>0))
+      m.push('No se ingresó el monto de la venta antes de escanear.');
+    else if(Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
+      m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto de la venta ($'+Number(montoEsperado).toFixed(2)+').');
+  }
+  if(!(Number(d.monto)>0))
+    m.push('El monto del QR no es válido.');
+  if(!RE_UUID.test(String(d.uuid||'')))
+    m.push('El QR no tiene un formato de comprobante válido (ID de transacción).');
+  if(!RE_HASH.test(String(d.hash||'')))
+    m.push('El QR no tiene un formato de comprobante válido (firma).');
+  if(!String(d.ctaOrigen||'').trim())
+    m.push('El QR no tiene un formato de comprobante válido (cuenta origen).');
+  if(!RE_COMPROBANTE.test(String(d.comprobante||'')))
+    m.push('El QR no tiene un formato de comprobante válido (N° comprobante).');
+  const ts=Number(d.timestamp);
+  if(!ts || ts>Date.now()+5*60*1000)
+    m.push('La fecha del comprobante no es válida.');
+  if(m.length) return {veredicto:'RECHAZADO', motivos:m};
+
+  const horas=(Date.now()-ts)/3.6e6;
+  if(horas>CONFIG.VENTANA_HORAS)
+    return {veredicto:'ALERTA', motivos:['El comprobante fue hecho '+tiempoRelativo(ts)+'. Revisar antes de despachar.']};
+
+  return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'], ok:true};
+}
+
+// Formatea una fecha pasada como texto relativo legible: "hace 1 minuto", "hace 5 horas", etc.
+function tiempoRelativo(ts){
+  const min=Math.round((Date.now()-ts)/60000);
+  if(min<1) return 'hace unos segundos';
+  if(min===1) return 'hace 1 minuto';
+  if(min<60) return 'hace '+min+' minutos';
+  const horas=Math.round(min/60);
+  if(horas===1) return 'hace 1 hora';
+  if(horas<24) return 'hace '+horas+' horas';
+  const dias=Math.round(horas/24);
+  return dias===1?'hace 1 día':'hace '+dias+' días';
+}
+
+// Tipos de comprobante conocidos: transferencia bancaria directa (BP_TO_DEUNA)
+// y pagos desde billetera DeUna, que vienen con varios marcadores segun el tipo
+// de operacion (CASH_OUT_BP, CASH_OUT_BP_RECHARGE_BP, etc.) -- misma estructura
+// de campos en todos, asi que se acepta cualquier variante que empiece con
+// CASH_OUT_BP en vez de mantener una lista exacta que hay que actualizar cada
+// vez que aparece un tipo nuevo. El timestamp viene en unidades distintas:
+// segundos (BP_TO_DEUNA) vs milisegundos (CASH_OUT_BP*).
+const RE_TIPO_VALIDO=/^(BP_TO_DEUNA|CASH_OUT_BP)/;
+function parsear(t){
+  if(!t) return null;
+  const p=t.split(':').map(s=>s.trim());
+  if(p.length<13 || !RE_TIPO_VALIDO.test(p[1]||'')) return null;
+  const rawTs=p[9];
+  const timestamp = rawTs.length>10 ? parseInt(rawTs,10) : parseInt(rawTs,10)*1000; // ya en ms vs segundos
+  return {ordenante:p[3],ctaOrigen:p[4],beneficiario:p[6],ctaDestino:p[7],
+          monto:parseFloat(p[8]),timestamp:timestamp,uuid:p[10],comprobante:p[11],hash:p[12]};
+}
+
+function mostrar(r,d){
+  const ok=(r.veredicto==='PENDIENTE_CONCILIACION'||r.veredicto==='ALERTA'||r.ok);
+  const box=$('result'); box.className='result on '+(ok?'ok':'bad');
+  $('mark').innerHTML='<path d="'+(ok?CHECK:CROSS)+'"/>';
+  // Vibracion corta al aceptar, patron mas largo/duro al rechazar (util en lugares ruidosos).
+  try{ if(navigator.vibrate) navigator.vibrate(ok ? 60 : [80,60,80,60,120]); }catch(e){}
+  if(ok && d){
+    const last4=String(d.ctaDestino).slice(-4);
+    $('rlabel').textContent='Transferencia recibida';
+    animarMonto($('ramount'), d.monto);
+    $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
+      fila('Cuenta '+(CONFIG.NOMBRE_NEGOCIO||'destino'),'····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
+      (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
+      '<div class="chip">Registrado · pendiente de conciliar con el banco</div>';
+    lanzarChispas(); hablar(d, r);
+  }else{
+    const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
+    $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
+    $('ramount').textContent=titulo;
+    $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
+    hablarRechazo(r, d);
+  }
+}
+function fila(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
+
+function animarMonto(el,target){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches){ el.textContent='$'+target.toFixed(2); return; }
+  const dur=700,t0=performance.now();
+  (function f(t){const p=Math.min(1,(t-t0)/dur);const val=target*(1-Math.pow(1-p,3));
+    el.textContent='$'+val.toFixed(2); if(p<1)requestAnimationFrame(f);})(t0);
+}
+function lanzarChispas(){
+  if(matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+  const box=$('result'),cx=innerWidth/2,cy=innerHeight*0.32;
+  for(let i=0;i<14;i++){ const s=document.createElement('div'); s.className='spark'; box.appendChild(s);
+    const ang=Math.random()*Math.PI*2,dist=90+Math.random()*140;
+    s.style.left=cx+'px'; s.style.top=cy+'px';
+    s.animate([{transform:'translate(-50%,-50%) scale(1)',opacity:1},
+      {transform:'translate('+(Math.cos(ang)*dist-6)+'px,'+(Math.sin(ang)*dist-6)+'px) scale(0)',opacity:0}],
+      {duration:700+Math.random()*400,easing:'cubic-bezier(.2,.7,.3,1)'});
+    setTimeout(()=>s.remove(),1300);
+  }
+}
+function vozEs(){
+  return voces.find(x=>/es[-_]?(US|419|MX|ES)/i.test(x.lang))||voces.find(x=>/^es/i.test(x.lang));
+}
+function hablar(d, r){
+  try{
+    const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
+    const ent=Math.floor(d.monto),cent=Math.round((d.monto-ent)*100);
+    const last4=String(d.ctaDestino).slice(-4).split('').map(c=>dig[+c]!==undefined?dig[+c]:c).join(' ');
+    let t='Transferencia recibida. '+ent+' dólares'; if(cent>0)t+=' con '+cent+' centavos';
+    t+='. A la cuenta terminada en '+last4+'.';
+    if(r && r.veredicto==='ALERTA'){
+      t+=' Atención: '+(r.motivos||[]).join(' ');
+    }
+    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.02;
+    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+// Sirena corta (sube y baja de tono) que antecede el aviso hablado de un
+// comprobante rechazado, para llamar la atencion antes de que hable.
+function sonarSirena(){
+  return new Promise(resolve=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const osc=ctx.createOscillator(), gain=ctx.createGain();
+      osc.type='sawtooth'; osc.connect(gain); gain.connect(ctx.destination);
+      const t0=ctx.currentTime;
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.28, t0+0.05);
+      osc.frequency.setValueAtTime(520, t0);
+      osc.frequency.linearRampToValueAtTime(980, t0+0.28);
+      osc.frequency.linearRampToValueAtTime(520, t0+0.56);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0+0.62);
+      osc.start(t0); osc.stop(t0+0.65);
+      osc.onended=()=>{ ctx.close().catch(()=>{}); resolve(); };
+      setTimeout(resolve, 750); // por si onended no llega a disparar
+    }catch(e){ resolve(); }
+  });
+}
+
+// d = datos del QR leido (para poder mencionar el monto del comprobante
+// rechazado, aunque no se haya aceptado).
+async function hablarRechazo(r, d){
+  await sonarSirena();
+  try{
+    const montoTxt = (d && Number(d.monto)>0) ? (' El comprobante es por '+formatoMontoHablado(d.monto)+'.') : '';
+    let t='Atención. ';
+    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No despachar.';
+    else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
+    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No despachar.';
+    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.0;
+    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
+function formatoMontoHablado(monto){
+  const ent=Math.floor(monto), cent=Math.round((monto-ent)*100);
+  let t=ent+' dólares'; if(cent>0) t+=' con '+cent+' centavos';
+  return t;
+}
+function reanudar(){
+  $('result').className='result'; ocupado=false;
+  // En modo 'monto', suelta la camara mientras se pide el monto de la
+  // proxima venta (no se reusa el monto anterior, para no aceptar por
+  // descuido una venta distinta con el monto de la venta previa). En modo
+  // 'directo' vuelve a escanear de una, como antes.
+  if(CONFIG.MODO_ESCANEO!=='directo'){
+    detenerCamara();
+    $('scanUi').classList.remove('on');
+  }
+  comenzarEscaneo(0);
+}
+
+// --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
+const VEREDICTOS_LEGIBLES_PC = { PENDIENTE_CONCILIACION:'Aceptado', ALERTA:'Aceptado (alerta)', RECHAZADO:'Rechazado', DUPLICADO:'Duplicado' };
+const ACEPTADOS_PC = ['PENDIENTE_CONCILIACION','ALERTA'];
+let ultimoDashboard = {};
+
+function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+
+function renderMovimientos(movs){
+  if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">Todavía no has escaneado nada hoy.</div>'; return; }
+  $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
+    const ok=ACEPTADOS_PC.includes(m.veredicto);
+    const hora=new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+    return '<div class="pc-mov-row"><span class="pc-mov-hora">'+hora+'</span>'+
+      '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
+      '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>';
+  }).join('');
+}
+
+// Grafico de barras (SVG, sin librerias) del dinero cobrado en los ultimos 7 dias.
+function renderChart(semana){
+  const svg=$('pcChart');
+  if(!semana || !semana.length){ svg.innerHTML=''; return; }
+  const w=280, h=90, padBottom=16, barW=24;
+  const gap=(w-semana.length*barW)/(semana.length+1);
+  const max=Math.max(1, ...semana.map(d=>d.monto||0));
+  const dias=['D','L','M','M','J','V','S'];
+  let html='<defs><linearGradient id="barGrad" x1="0" y1="1" x2="0" y2="0">'+
+    '<stop offset="0" stop-color="#6C3AED"/><stop offset="1" stop-color="#3B82F6"/></linearGradient></defs>';
+  semana.forEach((d,i)=>{
+    const x=gap+i*(barW+gap);
+    const barH=Math.max(3, ((d.monto||0)/max)*(h-padBottom-10));
+    const y=h-padBottom-barH;
+    const letra=dias[new Date(d.fecha+'T00:00:00').getDay()];
+    html+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW+'" height="'+barH.toFixed(1)+'" rx="5" fill="url(#barGrad)"></rect>';
+    html+='<text class="pc-chart-label" x="'+(x+barW/2).toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle">'+letra+'</text>';
+  });
+  svg.innerHTML=html;
+}
+
+function hoyISOClient(){ return new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10); }
+
+let movimientosMostrados = [];
+
+async function abrirCuenta(){
+  detenerCamara();
+  $('panelCuenta').classList.add('on');
+  document.querySelector('.panel-card').scrollTop = 0; // por si quedo scrolleado de una apertura anterior
+  $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
+  $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
+  $('pcMontoHoy').textContent='—';
+  $('pcChart').innerHTML='';
+  $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
+  $('pcMovs').innerHTML='';
+  $('pcMovsTitulo').textContent='Movimientos de hoy';
+  if(!$('pcDesde').value){ $('pcDesde').value=hoyISOClient(); $('pcHasta').value=hoyISOClient(); }
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const res=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    ultimoDashboard = d;
+
+    $('pcPlan').textContent = d.plan || 'básico';
+    $('pcVence').textContent = d.membresiaVencimiento
+      ? ('Vence '+new Date(d.membresiaVencimiento).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))
+      : 'Sin fecha de vencimiento';
+    if(d.diasRestantes!=null){
+      $('pcDiasNum').textContent=d.diasRestantes;
+      $('pcDiasNum').className='num'+(d.diasRestantes>7?'':(d.diasRestantes>=1?' warn':' bad'));
+    }else{
+      $('pcDiasNum').textContent='∞';
+    }
+
+    $('pcMontoHoy').textContent = '$'+((d.hoy&&d.hoy.monto)||0).toFixed(2);
+
+    renderChart(d.semana);
+
+    $('pcStats').innerHTML =
+      pstat(d.totalEscaneos||0, 'Escaneos totales') +
+      pstat(d.aceptados||0, 'Aceptados', 'ok') +
+      pstat(d.rechazados||0, 'Rechazados', 'no') +
+      pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana', 'amarillo');
+
+    movimientosMostrados = d.movimientosHoy || [];
+    renderMovimientos(movimientosMostrados);
+  }catch(e){
+    $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
+  }
+}
+
+$('btnPcBuscar').addEventListener('click', buscarMovimientos);
+
+async function buscarMovimientos(){
+  const desde=$('pcDesde').value, hasta=$('pcHasta').value;
+  if(!desde || !hasta) return;
+  $('pcMovs').innerHTML='<div class="pc-mov-vacio">Buscando...</div>';
+  $('pcMovsTitulo').textContent = desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango';
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const res=await fetch(NUVO_API+'/api/account/dashboard?desde='+desde+'&hasta='+hasta, { headers:{ Authorization:'Bearer '+session.access_token } });
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    movimientosMostrados = d.movimientosRango || [];
+    renderMovimientos(movimientosMostrados);
+  }catch(e){
+    $('pcMovs').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
+  }
+}
+
+function cerrarCuenta(){
+  $('panelCuenta').classList.remove('on');
+  iniciarCamara();
+}
+
+$('btnPcPdf').addEventListener('click', () => {
+  const movs = movimientosMostrados || [];
+  if(!movs.length){ alert('No hay movimientos en ese rango.'); return; }
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar la librería de PDF (revisa tu conexión).');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    if(typeof doc.autoTable !== 'function') throw new Error('No se pudo cargar el complemento de tablas del PDF.');
+
+    const desde=$('pcDesde').value, hasta=$('pcHasta').value;
+    let aceptados=0, rechazados=0, montoTotal=0;
+    movs.forEach(m=>{
+      if(ACEPTADOS_PC.includes(m.veredicto)){ aceptados++; if(m.monto) montoTotal+=Number(m.monto); }
+      else rechazados++;
+    });
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    doc.text('Mis movimientos', 14, 18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,96,118);
+    doc.text((nombreUsuario||'')+' · '+(desde===hasta?desde:desde+' a '+hasta), 14, 25);
+
+    doc.setTextColor(10,22,61); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('Total cobrado: $'+montoTotal.toFixed(2), 14, 35);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,96,118);
+    doc.text('Aceptados: '+aceptados+'   Rechazados: '+rechazados+'   Transacciones: '+movs.length, 14, 41);
+
+    doc.autoTable({
+      startY: 47,
+      head: [['Fecha','Veredicto','Monto']],
+      body: movs.map(m=>[
+        new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
+        VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
+        m.monto?'$'+Number(m.monto).toFixed(2):'—',
+      ]),
+      headStyles:{fillColor:[10,22,61]}, styles:{fontSize:9},
+      didParseCell: function(data){
+        if(data.section!=='body') return;
+        const ok = ACEPTADOS_PC.includes(movs[data.row.index].veredicto);
+        data.cell.styles.fillColor = ok ? [217,245,225] : [252,225,229];
+        data.cell.styles.textColor = ok ? [14,124,63] : [194,30,58];
+      },
+    });
+    doc.save('mis-movimientos_'+desde+'_a_'+hasta+'.pdf');
+  }catch(e){ alert('No se pudo generar el PDF: '+e.message); }
+});
+
+$('btnPcExcel').addEventListener('click', () => {
+  const movs = movimientosMostrados || [];
+  if(!movs.length){ alert('No hay movimientos en ese rango.'); return; }
+  try{
+    if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
+    const desde=$('pcDesde').value, hasta=$('pcHasta').value;
+    const filas = movs.map(m=>({
+      Fecha: new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
+      Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
+      Monto: m.monto?Number(m.monto):'',
+    }));
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.json_to_sheet(filas);
+    ws['!cols']=[{wch:16},{wch:20},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+    XLSX.writeFile(wb, 'mis-movimientos_'+desde+'_a_'+hasta+'.xlsx');
+  }catch(e){ alert('No se pudo generar el Excel: '+e.message); }
+});
+
+// Registra cada intento de escaneo (aceptado o no) para las estadisticas de
+// "mi cuenta". No bloquea la UI: si falla, no afecta el resultado mostrado.
+async function registrarEscaneo(r, d){
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) return;
+    fetch(NUVO_API+'/api/scans/log', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null, vendedor: vCode || null })
+    }).catch(()=>{});
+  }catch(e){}
+}
+</script>
+</body>
+</html>

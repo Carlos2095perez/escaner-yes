@@ -1,0 +1,59 @@
+name: Compilar APK de Android
+
+# Este workflow compila el escaner (android-app/) como un APK nativo de
+# Android (con WebView embebido via Capacitor, no un Trusted Web Activity
+# -- por eso nunca muestra barra de navegador, sin importar el dominio).
+# Se corre en los servidores de GitHub porque el build de Android necesita
+# el SDK/Gradle de Google, que no siempre esta disponible desde cualquier
+# entorno de desarrollo.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/conectar-escaner-yes-repo-fk9cds
+    paths:
+      - 'android-app/**'
+      - '.github/workflows/build-android.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Instalar dependencias (Capacitor)
+        working-directory: android-app
+        run: npm ci
+
+      - name: Sincronizar Capacitor (copia scanner.html y los assets al proyecto Android)
+        working-directory: android-app
+        run: npx cap sync android
+
+      - name: Decodificar el keystore de firma
+        working-directory: android-app/android/app
+        run: echo "${{ secrets.NUVO_KEYSTORE_BASE64 }}" | base64 -d > nuvo-release.keystore
+
+      - name: Compilar el APK firmado
+        working-directory: android-app/android
+        env:
+          NUVO_KEYSTORE_PATH: ${{ github.workspace }}/android-app/android/app/nuvo-release.keystore
+          NUVO_KEYSTORE_PASSWORD: ${{ secrets.NUVO_KEYSTORE_PASSWORD }}
+          NUVO_KEY_ALIAS: ${{ secrets.NUVO_KEY_ALIAS }}
+          NUVO_KEY_PASSWORD: ${{ secrets.NUVO_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Subir el APK como artefacto de esta ejecucion
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuvo-android
+          path: android-app/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
