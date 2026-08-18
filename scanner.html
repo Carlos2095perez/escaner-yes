@@ -752,7 +752,7 @@ function validarLocal(d, montoEsperado){
     m.push('La cuenta destino no es '+(CONFIG.NOMBRE_NEGOCIO||'la del negocio')+' (...'+String(d.ctaDestino).slice(-4)+').');
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
-    m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+'.');
+    m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+' (el comprobante dice: "'+(d.beneficiario||'—')+'").');
   if(montoEsperado && Number(montoEsperado)>0 && Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
     m.push('El monto no coincide con la factura.');
   if(!(Number(d.monto)>0))
