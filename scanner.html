@@ -178,6 +178,10 @@ canvas{display:none}
 .pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
   background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
+.pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
+.pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.pc-filtro input{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
+  border:1px solid var(--azul-70);background:rgba(255,255,255,.06);color:#fff;font-family:var(--inter)}
 .pc-mov-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
 .pc-mov-row:last-child{border-bottom:0}
 .pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
@@ -214,6 +218,8 @@ canvas{display:none}
   .pc-mov-row{border-bottom-color:#E4E7F0}
   .pc-mov-hora,.pc-mov-txt{color:#0A163D}
   .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
+  .pc-chart-label{fill:rgba(10,22,61,.55)}
+  .pc-filtro input{background:#fff;border-color:#E4E7F0;color:#0A163D}
 }
 </style>
 </head>
@@ -313,11 +319,16 @@ canvas{display:none}
     <div class="panel-stats" id="pcStats"></div>
 
     <div class="pc-movs-head">
-      <div class="pc-chart-title">Movimientos de hoy</div>
-      <div class="pc-movs-botones">
-        <button class="pc-mini-btn" id="btnPcExcel">Excel</button>
-        <button class="pc-mini-btn" id="btnPcPdf">PDF</button>
-      </div>
+      <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
+    </div>
+    <div class="pc-filtro">
+      <input type="date" id="pcDesde">
+      <input type="date" id="pcHasta">
+      <button class="pc-mini-btn" id="btnPcBuscar">Buscar</button>
+    </div>
+    <div class="pc-movs-botones" style="margin-bottom:12px">
+      <button class="pc-mini-btn" id="btnPcExcel">Descargar Excel</button>
+      <button class="pc-mini-btn" id="btnPcPdf">Descargar PDF</button>
     </div>
     <div id="pcMovs"></div>
   </div>
@@ -935,20 +946,27 @@ function renderChart(semana){
     const y=h-padBottom-barH;
     const letra=dias[new Date(d.fecha+'T00:00:00').getDay()];
     html+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW+'" height="'+barH.toFixed(1)+'" rx="5" fill="url(#barGrad)"></rect>';
-    html+='<text x="'+(x+barW/2).toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle" font-size="9" fill="rgba(255,255,255,.5)" font-family="Inter,sans-serif">'+letra+'</text>';
+    html+='<text class="pc-chart-label" x="'+(x+barW/2).toFixed(1)+'" y="'+(h-3)+'" text-anchor="middle">'+letra+'</text>';
   });
   svg.innerHTML=html;
 }
 
+function hoyISOClient(){ return new Date(Date.now() - 5*3600*1000).toISOString().slice(0,10); }
+
+let movimientosMostrados = [];
+
 async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
+  document.querySelector('.panel-card').scrollTop = 0; // por si quedo scrolleado de una apertura anterior
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
   $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
   $('pcMontoHoy').textContent='—';
   $('pcChart').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
   $('pcMovs').innerHTML='';
+  $('pcMovsTitulo').textContent='Movimientos de hoy';
+  if(!$('pcDesde').value){ $('pcDesde').value=hoyISOClient(); $('pcHasta').value=hoyISOClient(); }
   try{
     const { data:{ session } } = await sbc.auth.getSession();
     if(!session) throw new Error('sin sesion');
@@ -978,9 +996,30 @@ async function abrirCuenta(){
       pstat(d.rechazados||0, 'Rechazados', 'no') +
       pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana', 'amarillo');
 
-    renderMovimientos(d.movimientosHoy);
+    movimientosMostrados = d.movimientosHoy || [];
+    renderMovimientos(movimientosMostrados);
   }catch(e){
     $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
+  }
+}
+
+$('btnPcBuscar').addEventListener('click', buscarMovimientos);
+
+async function buscarMovimientos(){
+  const desde=$('pcDesde').value, hasta=$('pcHasta').value;
+  if(!desde || !hasta) return;
+  $('pcMovs').innerHTML='<div class="pc-mov-vacio">Buscando...</div>';
+  $('pcMovsTitulo').textContent = desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango';
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const res=await fetch(NUVO_API+'/api/account/dashboard?desde='+desde+'&hasta='+hasta, { headers:{ Authorization:'Bearer '+session.access_token } });
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    movimientosMostrados = d.movimientosRango || [];
+    renderMovimientos(movimientosMostrados);
+  }catch(e){
+    $('pcMovs').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
   }
 }
 
@@ -990,48 +1029,67 @@ function cerrarCuenta(){
 }
 
 $('btnPcPdf').addEventListener('click', () => {
-  const movs = ultimoDashboard.movimientosHoy || [];
-  if(!movs.length){ alert('Todavía no tienes movimientos hoy.'); return; }
+  const movs = movimientosMostrados || [];
+  if(!movs.length){ alert('No hay movimientos en ese rango.'); return; }
   try{
     if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar la librería de PDF (revisa tu conexión).');
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     if(typeof doc.autoTable !== 'function') throw new Error('No se pudo cargar el complemento de tablas del PDF.');
 
+    const desde=$('pcDesde').value, hasta=$('pcHasta').value;
+    let aceptados=0, rechazados=0, montoTotal=0;
+    movs.forEach(m=>{
+      if(ACEPTADOS_PC.includes(m.veredicto)){ aceptados++; if(m.monto) montoTotal+=Number(m.monto); }
+      else rechazados++;
+    });
+
     doc.setFont('helvetica','bold'); doc.setFontSize(16);
-    doc.text('Movimientos de hoy', 14, 18);
+    doc.text('Mis movimientos', 14, 18);
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,96,118);
-    doc.text((nombreUsuario||'')+' · '+new Date().toLocaleDateString('es-EC'), 14, 25);
+    doc.text((nombreUsuario||'')+' · '+(desde===hasta?desde:desde+' a '+hasta), 14, 25);
+
+    doc.setTextColor(10,22,61); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('Total cobrado: $'+montoTotal.toFixed(2), 14, 35);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,96,118);
+    doc.text('Aceptados: '+aceptados+'   Rechazados: '+rechazados+'   Transacciones: '+movs.length, 14, 41);
 
     doc.autoTable({
-      startY: 32,
-      head: [['Hora','Veredicto','Monto']],
+      startY: 47,
+      head: [['Fecha','Veredicto','Monto']],
       body: movs.map(m=>[
-        new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}),
+        new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
         VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
         m.monto?'$'+Number(m.monto).toFixed(2):'—',
       ]),
       headStyles:{fillColor:[10,22,61]}, styles:{fontSize:9},
+      didParseCell: function(data){
+        if(data.section!=='body') return;
+        const ok = ACEPTADOS_PC.includes(movs[data.row.index].veredicto);
+        data.cell.styles.fillColor = ok ? [217,245,225] : [252,225,229];
+        data.cell.styles.textColor = ok ? [14,124,63] : [194,30,58];
+      },
     });
-    doc.save('movimientos-'+new Date().toISOString().slice(0,10)+'.pdf');
+    doc.save('mis-movimientos_'+desde+'_a_'+hasta+'.pdf');
   }catch(e){ alert('No se pudo generar el PDF: '+e.message); }
 });
 
 $('btnPcExcel').addEventListener('click', () => {
-  const movs = ultimoDashboard.movimientosHoy || [];
-  if(!movs.length){ alert('Todavía no tienes movimientos hoy.'); return; }
+  const movs = movimientosMostrados || [];
+  if(!movs.length){ alert('No hay movimientos en ese rango.'); return; }
   try{
     if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
+    const desde=$('pcDesde').value, hasta=$('pcHasta').value;
     const filas = movs.map(m=>({
-      Hora: new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}),
+      Fecha: new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
       Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
       Monto: m.monto?Number(m.monto):'',
     }));
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.json_to_sheet(filas);
-    ws['!cols']=[{wch:10},{wch:20},{wch:10}];
+    ws['!cols']=[{wch:16},{wch:20},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
-    XLSX.writeFile(wb, 'movimientos-'+new Date().toISOString().slice(0,10)+'.xlsx');
+    XLSX.writeFile(wb, 'mis-movimientos_'+desde+'_a_'+hasta+'.xlsx');
   }catch(e){ alert('No se pudo generar el Excel: '+e.message); }
 });
 
