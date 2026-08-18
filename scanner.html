@@ -449,7 +449,10 @@ async function revisarAcceso(){
       const cfg=await cfgResp.json();
       if(cfgResp.ok){
         CONFIG={ NOMBRE_NEGOCIO: cfg.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: cfg.cuentaDestinoSufijo||'',
-                 BENEFICIARIO_CLAVES: cfg.beneficiarioClaves||[], VENTANA_HORAS: cfg.ventanaHoras||36 };
+                 // El beneficiario del comprobante se compara en mayusculas (ver
+                 // validarLocal) -- si no, el nombre que el admin tipeo con
+                 // mayusculas/minusculas normales nunca coincide.
+                 BENEFICIARIO_CLAVES: (cfg.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: cfg.ventanaHoras||36 };
       }
     }catch(e){ /* si falla, sigue con los valores por defecto (vacios) */ }
 
