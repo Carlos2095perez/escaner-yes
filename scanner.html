@@ -27,6 +27,12 @@
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
 #video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover}
+/* Se muestra el ultimo frame capturado justo antes de soltar la camara
+   (ver onScan) para que la transicion a "verificando"/resultado sea
+   continua -- sin esto, apagar la camara deja el video en negro un
+   instante y se ve como un parpadeo/corte. */
+#freeze{position:fixed;inset:0;z-index:1;width:100vw;height:100vh;object-fit:cover;display:none}
+#freeze.on{display:block}
 
 /* ---------- Capa de escaneo EN VIVO ---------- */
 .scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;
@@ -43,18 +49,30 @@ canvas{display:none}
 .live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.25}}
 
-.frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1}
-.frame i{position:absolute;width:36px;height:36px;border:3px solid var(--yellow);border-radius:4px;
-  animation:cornPulse 1.6s ease-in-out infinite}
-@keyframes cornPulse{50%{border-color:#fff}}
-.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0}
-.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0}
-.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0}
-.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0}
-.laser{position:absolute;left:6%;right:6%;height:3px;top:6%;border-radius:3px;
-  background:linear-gradient(90deg,transparent,var(--yellow),transparent);
-  box-shadow:0 0 16px 3px rgba(255,199,0,.8);animation:sweep 2s ease-in-out infinite}
-@keyframes sweep{0%{top:6%}50%{top:90%}100%{top:6%}}
+.frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1;
+  border-radius:26px}
+.frame::before{content:"";position:absolute;inset:-18px;border-radius:38px;
+  background:radial-gradient(circle, rgba(255,199,0,.20), transparent 70%);
+  animation:glow 2.4s ease-in-out infinite;will-change:opacity,transform}
+@keyframes glow{0%,100%{opacity:.45;transform:scale(.94)}50%{opacity:1;transform:scale(1.05)}}
+.frame i{position:absolute;width:34px;height:34px;border:3px solid var(--yellow);border-radius:10px;
+  animation:cornPulse 1.8s ease-in-out infinite;will-change:opacity,transform}
+@keyframes cornPulse{0%,100%{opacity:.6;transform:scale(.93)}50%{opacity:1;transform:scale(1);border-color:#fff}}
+.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;animation-delay:0s}
+.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;animation-delay:.15s}
+.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;animation-delay:.3s}
+.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;animation-delay:.45s}
+/* La linea se mueve con transform (no con "top") para que la anime el
+   compositor, no el hilo principal -- por eso ya no se traba ni se ve
+   inconsistente aunque el hilo principal este ocupado decodificando. El
+   wrapper .laser-track ocupa todo el marco (inset:0) para que el
+   porcentaje de translateY se calcule sobre la altura del marco, no la de
+   la linea. */
+.laser-track{position:absolute;inset:0;animation:sweep 2.4s cubic-bezier(.45,0,.55,1) infinite;will-change:transform}
+@keyframes sweep{0%{transform:translateY(-4%)}50%{transform:translateY(92%)}100%{transform:translateY(-4%)}}
+.laser{position:absolute;left:4%;right:4%;top:0;height:52px;border-radius:8px;
+  background:linear-gradient(180deg,transparent,rgba(255,199,0,.08) 30%,rgba(255,199,0,.6) 50%,rgba(255,199,0,.08) 70%,transparent);
+  filter:blur(.5px)}
 
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
@@ -129,7 +147,7 @@ canvas{display:none}
 .result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -226,6 +244,7 @@ canvas{display:none}
 </head>
 <body>
 <video id="video" muted playsinline autoplay></video>
+<img id="freeze" alt="">
 <canvas id="canvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
@@ -244,7 +263,7 @@ canvas{display:none}
       <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
     </div>
   </div>
-  <div class="frame"><i></i><i></i><i></i><i></i><div class="laser"></div></div>
+  <div class="frame"><i></i><i></i><i></i><i></i><div class="laser-track"><div class="laser"></div></div></div>
   <div class="side-controls">
     <button class="side-btn" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn" id="btnLuz" style="display:none">💡 Luz</button>
@@ -417,23 +436,26 @@ function leerCacheAcceso(){ try{ return JSON.parse(localStorage.getItem(CACHE_AC
 function aplicarAcceso(info){
   nombreUsuario = info.nombre || '';
   CONFIG = info.cfg;
-  $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
-  $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
+
+  // Si ya se activo la camara antes en este dispositivo, se entra directo a
+  // escanear -- sin pintar ningun texto en el "gate" (ni "Hola", ni
+  // "activa la camara"), ni siquiera por un instante. La app tiene que
+  // sentirse instantanea, no dar la bienvenida cada vez que se abre.
+  if(localStorage.getItem('nuvoCameraGranted')==='1'){
+    comenzarEscaneo(montoURL);
+    return;
+  }
+
+  // Primera vez en este dispositivo: hace falta el tap para pedir el
+  // permiso de camara (lo exige el sistema, no se puede evitar), sin
+  // vueltas ni saludo.
+  $('gateTitle').textContent='Activar cámara';
+  $('gateDesc').textContent='Se usa para leer el código QR del comprobante.';
   $('loginBox').style.display='none'; $('codeBox').style.display='none';
   $('gateErr').textContent = !CONFIG.CUENTA_DESTINO_SUFIJO
     ? 'El administrador aún no configuró el negocio en el panel — todos los comprobantes se van a rechazar hasta que lo haga.'
     : (info.avisoProximoAVencer ? ('Tu membresía vence en '+info.diasRestantes+' día(s).') : '');
-
-  // Si ya activamos la camara antes en este dispositivo, entra directo a
-  // escanear (no hace falta el tap de "Activar camara" de nuevo). Si el
-  // modo de este usuario es 'monto', ademas se pide el monto antes de cada
-  // escaneo -- ver comenzarEscaneo().
-  if(localStorage.getItem('nuvoCameraGranted')==='1'){
-    $('btnStart').style.display='none';
-    comenzarEscaneo(montoURL);
-  }else{
-    $('btnStart').style.display='inline-flex';
-  }
+  $('btnStart').style.display='inline-flex';
 }
 
 function bloquear(titulo, desc){
@@ -599,13 +621,18 @@ function activar(){ comenzarEscaneo(montoURL); }
 
 async function comenzarCamara(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
+  // La UI de escaneo se muestra de una, sin esperar a que termine de
+  // inicializar la camara (eso puede tardar unos cientos de ms por el
+  // hardware) -- si se espera, queda una pausa visible con el texto de
+  // "Activa la camara", que se sentia como un paso/bienvenida de mas.
+  $('montoGate').style.display='none'; $('gate').style.display='none'; $('scanUi').classList.add('on');
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
-    $('montoGate').style.display='none'; $('gate').style.display='none'; $('scanUi').classList.add('on');
+    $('freeze').classList.remove('on');
   }else{
     // el permiso de camara pudo fallar/revocarse -- vuelve a la pantalla de activacion.
-    $('montoGate').style.display='none';
+    $('scanUi').classList.remove('on');
     $('gate').style.display='flex';
     $('btnStart').style.display='inline-flex';
     $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
@@ -692,11 +719,19 @@ function detenerCamara(){
   video.srcObject=null;
 }
 
-// Bucle rapido principal: igual que siempre, imagen completa en cada frame.
+// Bucle rapido principal. Decodificar cada frame a la resolucion nativa de
+// la camara (hasta 1920x1920) es carisimo -- bloquea el hilo principal el
+// tiempo suficiente como para que TODA la animacion (la linea, los pulsos)
+// se vea trabada/inconsistente, sin importar que la animacion en si sea
+// fluida. jsQR lee perfecto un QR de comprobante a una resolucion mucho
+// menor, asi que se analiza reducido y el hilo principal queda libre.
+const ANALISIS_MAX=720;
 function tick(){
   if(!escaneando) return;
   if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
-    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    const vw=video.videoWidth, vh=video.videoHeight;
+    const s=Math.min(1, ANALISIS_MAX/Math.max(vw,vh));
+    canvas.width=Math.round(vw*s); canvas.height=Math.round(vh*s);
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const img=ctx.getImageData(0,0,canvas.width,canvas.height);
     const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
@@ -808,6 +843,9 @@ async function onScan(texto, fotoOverride){
   // camara. Si viene del plan B de foto, ya nos pasan la foto real (mejor
   // calidad) y la camara ya esta liberada.
   const foto=fotoOverride || capturarEvidencia();
+  // Se muestra ese mismo frame como "congelado" ANTES de soltar la camara,
+  // para que la transicion sea continua en vez de un corte a negro.
+  $('freeze').src=foto; $('freeze').classList.add('on');
   detenerCamara();
   $('verify').classList.add('on');
 
