@@ -284,7 +284,6 @@ canvas{display:none}
 
   <button class="btn" id="btnStart" style="display:none">Activar cámara</button>
   <div class="err" id="gateErr"></div>
-  <button class="link-tenue" id="btnCambiarCuenta" style="display:none">Cambiar de cuenta</button>
   <div class="powered">Con tecnología <b>NUVO</b></div>
 </div>
 
@@ -380,7 +379,6 @@ function mostrarLogin(){
   $('loginBox').style.display='flex';
   $('codeBox').style.display='none';
   $('btnStart').style.display='none';
-  $('btnCambiarCuenta').style.display='none';
 }
 
 $('btnEnviarCodigo').addEventListener('click', async ()=>{
@@ -405,31 +403,66 @@ $('btnVerificarCodigo').addEventListener('click', async ()=>{
   await revisarAcceso();
 });
 
-$('btnCambiarCuenta').addEventListener('click', async ()=>{
-  await sbc.auth.signOut();
-  $('gCorreo').value=''; $('gCodigo').value='';
-  mostrarLogin();
-});
+// Cache de la ultima verificacion de acceso que salio bien (nombre, config
+// de validacion, aviso de vencimiento) -- permite entrar directo a escanear
+// en cada apertura de la app SIN mostrar "Verificando acceso...", en vez de
+// repetir esa espera cada vez. La membresia se sigue revisando, pero en
+// segundo plano (ver verificarYAplicar) -- si de verdad esta vencida o
+// desactivada, ahi SI se interrumpe y se bloquea; mientras tanto se confia
+// en la sesion ya iniciada.
+const CACHE_ACCESO = 'nuvoAccesoCache';
+function guardarCacheAcceso(info){ try{ localStorage.setItem(CACHE_ACCESO, JSON.stringify(info)); }catch(e){} }
+function leerCacheAcceso(){ try{ return JSON.parse(localStorage.getItem(CACHE_ACCESO) || 'null'); }catch(e){ return null; } }
 
-async function revisarAcceso(){
-  const { data:{ session } } = await sbc.auth.getSession();
-  if(!session){ mostrarLogin(); return; }
+function aplicarAcceso(info){
+  nombreUsuario = info.nombre || '';
+  CONFIG = info.cfg;
+  $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
+  $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
+  $('loginBox').style.display='none'; $('codeBox').style.display='none';
+  $('gateErr').textContent = !CONFIG.CUENTA_DESTINO_SUFIJO
+    ? 'El administrador aún no configuró el negocio en el panel — todos los comprobantes se van a rechazar hasta que lo haga.'
+    : (info.avisoProximoAVencer ? ('Tu membresía vence en '+info.diasRestantes+' día(s).') : '');
 
-  $('gateErr').textContent='Verificando acceso...';
+  // Si ya activamos la camara antes en este dispositivo, entra directo a
+  // escanear (no hace falta el tap de "Activar camara" de nuevo). Si el
+  // modo de este usuario es 'monto', ademas se pide el monto antes de cada
+  // escaneo -- ver comenzarEscaneo().
+  if(localStorage.getItem('nuvoCameraGranted')==='1'){
+    $('btnStart').style.display='none';
+    comenzarEscaneo(montoURL);
+  }else{
+    $('btnStart').style.display='inline-flex';
+  }
+}
+
+function bloquear(titulo, desc){
+  detenerCamara();
+  $('scanUi').classList.remove('on');
+  $('montoGate').style.display='none';
+  $('gate').style.display='flex';
+  $('gateTitle').textContent=titulo;
+  $('gateDesc').textContent=desc;
+  $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
+  $('gateErr').textContent='';
+}
+
+// segundoPlano=false: primera verificacion (sin cache, o sin camara
+// activada todavia) -- puede mostrar "Verificando..." y bloquear pantalla.
+// segundoPlano=true: la app ya esta mostrando/escaneando con datos de la
+// cache -- esto solo actualiza esos datos en silencio, y unicamente
+// interrumpe si el servidor confirma que el acceso ya no es valido.
+async function verificarYAplicar(session, segundoPlano){
   try{
     const resp=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
     const m=await resp.json();
     if(!resp.ok){
-      $('gateErr').textContent = resp.status===401 ? 'Tu sesión expiró, ingresa de nuevo.' : (m.error||'No se pudo verificar tu acceso.');
-      if(resp.status===401){ await sbc.auth.signOut(); mostrarLogin(); }
+      if(resp.status===401){ await sbc.auth.signOut(); localStorage.removeItem(CACHE_ACCESO); mostrarLogin(); return; }
+      if(!segundoPlano) $('gateErr').textContent = m.error || 'No se pudo verificar tu acceso.';
       return;
     }
     if(!m.activo){
-      $('gateTitle').textContent='Acceso bloqueado';
-      $('gateDesc').textContent = m.vencida ? 'Tu membresía venció. Contacta al administrador para renovarla.' : 'Tu cuenta está desactivada. Contacta al administrador.';
-      $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
-      $('gateErr').textContent='';
-      $('btnCambiarCuenta').style.display='inline-block';
+      bloquear('Acceso bloqueado', m.vencida ? 'Tu membresía venció. Contacta al administrador para renovarla.' : 'Tu cuenta está desactivada. Contacta al administrador.');
       return;
     }
 
@@ -440,53 +473,55 @@ async function revisarAcceso(){
     });
     const regBody=await reg.json();
     if(!reg.ok){
-      $('gateTitle').textContent='Acceso bloqueado';
-      $('gateDesc').textContent = regBody.error || 'No se pudo vincular este dispositivo.';
-      $('loginBox').style.display='none'; $('codeBox').style.display='none'; $('btnStart').style.display='none';
-      $('gateErr').textContent='';
-      $('btnCambiarCuenta').style.display='inline-block';
+      bloquear('Acceso bloqueado', regBody.error || 'No se pudo vincular este dispositivo.');
       return;
     }
 
     // Config de validacion (a que cuenta/nombre debe ir el comprobante),
-    // editable desde el panel admin -- se pide en cada login.
+    // editable desde el panel admin -- se pide en cada verificacion.
+    let cfg={ NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36, MODO_ESCANEO:'monto' };
     try{
       const cfgResp=await fetch(NUVO_API+'/api/config/validacion', { headers:{ Authorization:'Bearer '+session.access_token } });
-      const cfg=await cfgResp.json();
+      const c=await cfgResp.json();
       if(cfgResp.ok){
-        CONFIG={ NOMBRE_NEGOCIO: cfg.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: cfg.cuentaDestinoSufijo||'',
-                 // El beneficiario del comprobante se compara en mayusculas (ver
-                 // validarLocal) -- si no, el nombre que el admin tipeo con
-                 // mayusculas/minusculas normales nunca coincide.
-                 BENEFICIARIO_CLAVES: (cfg.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: cfg.ventanaHoras||36,
-                 // Elegido por el admin en el perfil de este usuario: 'monto'
-                 // pide el monto de la venta antes de escanear (mas seguro),
-                 // 'directo' escanea sin pedir nada (mas rapido).
-                 MODO_ESCANEO: cfg.modoEscaneo==='directo' ? 'directo' : 'monto' };
+        cfg={ NOMBRE_NEGOCIO: c.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: c.cuentaDestinoSufijo||'',
+              // El beneficiario del comprobante se compara en mayusculas (ver
+              // validarLocal) -- si no, el nombre que el admin tipeo con
+              // mayusculas/minusculas normales nunca coincide.
+              BENEFICIARIO_CLAVES: (c.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: c.ventanaHoras||36,
+              // Elegido por el admin en el perfil de este usuario: 'monto'
+              // pide el monto de la venta antes de escanear (mas seguro),
+              // 'directo' escanea sin pedir nada (mas rapido).
+              MODO_ESCANEO: c.modoEscaneo==='directo' ? 'directo' : 'monto' };
       }
     }catch(e){ /* si falla, sigue con los valores por defecto (vacios) */ }
 
-    nombreUsuario = m.nombre || '';
-    $('gateTitle').textContent = nombreUsuario ? ('¡Hola, '+nombreUsuario.split(' ')[0]+'!') : 'Todo listo';
-    $('gateDesc').textContent='Activa la cámara y apunta al código QR. La lectura es automática y en vivo.';
-    $('loginBox').style.display='none'; $('codeBox').style.display='none';
-    $('btnCambiarCuenta').style.display='inline-block';
-    $('gateErr').textContent = !CONFIG.CUENTA_DESTINO_SUFIJO
-      ? 'El administrador aún no configuró el negocio en el panel — todos los comprobantes se van a rechazar hasta que lo haga.'
-      : (m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '');
+    const info = { nombre: m.nombre, cfg, avisoProximoAVencer: m.avisoProximoAVencer, diasRestantes: m.diasRestantes };
+    guardarCacheAcceso(info);
 
-    // Si ya activamos la camara antes en este dispositivo, entra directo a
-    // escanear (no hace falta el tap de "Activar camara" de nuevo). Si el
-    // modo de este usuario es 'monto', ademas se pide el monto antes de
-    // cada escaneo -- ver comenzarEscaneo().
-    if(localStorage.getItem('nuvoCameraGranted')==='1'){
-      $('btnStart').style.display='none';
-      comenzarEscaneo(montoURL);
+    if(segundoPlano){
+      CONFIG = cfg; nombreUsuario = m.nombre || '';
     }else{
-      $('btnStart').style.display='inline-flex';
+      aplicarAcceso(info);
     }
   }catch(e){
-    $('gateErr').textContent='No se pudo verificar tu acceso. Revisa tu conexión e intenta de nuevo.';
+    if(!segundoPlano) $('gateErr').textContent='No se pudo verificar tu acceso. Revisa tu conexión e intenta de nuevo.';
+    // en segundo plano, una falla de red no interrumpe nada -- se sigue
+    // confiando en los datos de la cache hasta el proximo intento.
+  }
+}
+
+async function revisarAcceso(){
+  const { data:{ session } } = await sbc.auth.getSession();
+  if(!session){ mostrarLogin(); return; }
+
+  const cache = leerCacheAcceso();
+  if(cache && localStorage.getItem('nuvoCameraGranted')==='1'){
+    aplicarAcceso(cache);
+    verificarYAplicar(session, true);
+  }else{
+    $('gateErr').textContent='Verificando acceso...';
+    await verificarYAplicar(session, false);
   }
 }
 
@@ -567,7 +602,7 @@ async function comenzarCamara(){
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
-    $('montoGate').style.display='none'; $('scanUi').classList.add('on');
+    $('montoGate').style.display='none'; $('gate').style.display='none'; $('scanUi').classList.add('on');
   }else{
     // el permiso de camara pudo fallar/revocarse -- vuelve a la pantalla de activacion.
     $('montoGate').style.display='none';
