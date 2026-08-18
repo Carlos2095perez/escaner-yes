@@ -82,7 +82,8 @@ canvas{display:none}
 .btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:17px;border:0;cursor:pointer;
   padding:18px 30px;border-radius:16px;background:var(--yellow);color:#000;box-shadow:0 12px 34px -10px rgba(255,199,0,.55);transition:transform .12s}
 .btn:active{transform:scale(.97)}
-.gate #loginBox,.gate #codeBox{pointer-events:auto;display:flex;flex-direction:column;gap:12px;width:100%;max-width:300px}
+.gate #loginBox,.gate #codeBox,.gate #montoBox{pointer-events:auto;display:flex;flex-direction:column;gap:12px;width:100%;max-width:300px}
+.gate input.monto{font-family:var(--sora);font-weight:800;font-size:26px}
 .gate input{width:100%;padding:14px;font-size:16px;border-radius:12px;border:1px solid rgba(255,255,255,.2);
   background:rgba(255,255,255,.06);color:#fff;text-align:center;font-family:var(--inter)}
 .gate input::placeholder{color:var(--muted)}
@@ -287,6 +288,16 @@ canvas{display:none}
   <div class="powered">Con tecnología <b>NUVO</b></div>
 </div>
 
+<div class="gate" id="montoGate" style="display:none">
+  <h1>¿Cuánto vas a cobrar?</h1>
+  <p>Escribe el monto exacto de la venta antes de escanear. El comprobante se rechaza si el monto no coincide — así evitamos que una transferencia real pero por un valor menor pase como si fuera la venta completa.</p>
+  <div id="montoBox">
+    <input type="number" id="inMonto" class="monto" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
+    <button class="btn" id="btnConfirmarMonto">Confirmar y escanear</button>
+  </div>
+  <div class="err" id="montoErr"></div>
+</div>
+
 <div class="panel" id="panelCuenta">
   <div class="panel-card">
     <div class="panel-head">
@@ -335,11 +346,6 @@ canvas{display:none}
 </div>
 
 <script>
-// URL /exec de tu Web App de Apps Script. Mientras no la configures, la app
-// sigue funcionando: valida el QR en el navegador y solo omite el registro
-// en el Sheet (que necesita el backend desplegado).
-const GAS_URL = 'PEGA_AQUI_LA_URL_EXEC_DEL_WEBAPP';
-
 const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
 // Se llena despues del login con /api/config/validacion (editable desde el
 // panel admin) -- ya no queda fijo en el codigo del escaner.
@@ -466,10 +472,11 @@ async function revisarAcceso(){
       : (m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '');
 
     // Si ya activamos la camara antes en este dispositivo, entra directo a
-    // escanear sin volver a pedir el tap de "Activar camara".
+    // pedir el monto (no hace falta el tap de "Activar camara" de nuevo,
+    // pero el monto de la venta SIEMPRE se pide, en cada escaneo).
     if(localStorage.getItem('nuvoCameraGranted')==='1'){
       $('btnStart').style.display='none';
-      activar();
+      mostrarMontoGate(montoURL);
     }else{
       $('btnStart').style.display='inline-flex';
     }
@@ -520,18 +527,40 @@ $('btnFoto').addEventListener('click', ()=>{
   $('fileInput').click();
 });
 
-async function activar(){
+// El monto de la venta se pide SIEMPRE antes de escanear (primera vez y
+// cada "Escanear otro"): sin esto, un comprobante real pero por un valor
+// menor al de la venta (ej. una transferencia de $0.01 a la cuenta correcta)
+// pasaba como valido porque nada obligaba a comparar contra lo que se
+// estaba cobrando.
+let montoActual=0;
+function mostrarMontoGate(prellenado){
+  $('inMonto').value = prellenado>0 ? prellenado.toFixed(2) : '';
+  $('montoErr').textContent='';
+  $('gate').style.display='none';
+  $('montoGate').style.display='flex';
+  setTimeout(()=>$('inMonto').focus(), 50);
+}
+
+function activar(){ mostrarMontoGate(montoURL); }
+
+$('btnConfirmarMonto').addEventListener('click', async ()=>{
+  const v=parseFloat($('inMonto').value);
+  if(!(v>0)){ $('montoErr').textContent='Ingresa un monto válido, mayor a 0.'; return; }
+  montoActual=v;
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
-  $('gateErr').textContent='';
+  $('montoErr').textContent='';
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
-    $('gate').style.display='none'; $('scanUi').classList.add('on');
+    $('montoGate').style.display='none'; $('scanUi').classList.add('on');
   }else{
-    // el auto-inicio pudo fallar si se revoco el permiso -- deja el boton para reintentar a mano.
+    // el permiso de camara pudo fallar/revocarse -- vuelve a la pantalla de activacion.
+    $('montoGate').style.display='none';
+    $('gate').style.display='flex';
     $('btnStart').style.display='inline-flex';
+    $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
   }
-}
+});
 
 // Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
 // activar por primera vez como para reanudar despues de un intento con foto.
@@ -724,23 +753,54 @@ async function onScan(texto, fotoOverride){
   detenerCamara();
   $('verify').classList.add('on');
 
-  // 1) Validación inmediata en el navegador (no depende del backend)
-  const local=validarLocal(datos, montoURL);
+  // 1) Validación inmediata en el navegador (nombre, cuenta, monto, formato,
+  //    ventana horaria -- no depende del backend, es instantánea).
+  let resultado=validarLocal(datos, montoActual);
 
-  // 2) Si ya está configurado el backend, intenta registrar/deduplicar en el Sheet.
-  //    Si falla o no está configurado, se queda con el resultado local (arriba).
-  let resultado=local;
-  if(GAS_URL && GAS_URL.indexOf('PEGA_AQUI')===-1){
+  // 2) Si localmente el comprobante parece válido, se confirma con el backend
+  //    ANTES de mostrar nada: solo el servidor puede saber si este mismo
+  //    comprobante ya se uso antes (en este dispositivo, en otro, hoy o
+  //    cualquier día). Esto reemplaza la validación local, no se limita a
+  //    complementarla -- si el backend dice que es duplicado, gana el backend.
+  let confirmadoServidor=false;
+  if(resultado.veredicto==='PENDIENTE_CONCILIACION' || resultado.veredicto==='ALERTA'){
     try{
-      const res=await fetch(GAS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-        body:JSON.stringify({datos, vendedor:vCode, montoEsperado:montoURL, foto}), redirect:'follow'});
-      resultado=await res.json();
-    }catch(e){ /* backend no disponible: se conserva la validacion local */ }
+      const { data:{ session } } = await sbc.auth.getSession();
+      const resp=await fetch(NUVO_API+'/api/scans/log', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
+        body: JSON.stringify({
+          veredicto: resultado.veredicto,
+          monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
+          vendedor: vCode || null,
+          comprobante: datos.comprobante || null,
+          qrUuid: datos.uuid || null,
+          qrHash: datos.hash || null,
+        }),
+      });
+      const body=await resp.json().catch(()=>({}));
+      if(resp.ok){
+        confirmadoServidor=true;
+        if(body.duplicado){
+          resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
+        }
+      }else{
+        resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) };
+      }
+    }catch(e){
+      // Sin conexion: no se puede verificar que el comprobante no este
+      // repetido. No se bloquea la venta (el negocio tiene que poder seguir
+      // vendiendo offline), pero se avisa en vez de aceptarlo en silencio.
+      resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) };
+    }
   }
 
   $('verify').classList.remove('on');
   mostrar(resultado, datos);
-  registrarEscaneo(resultado, datos);
+  // Si el backend ya registro este escaneo (dedup incluido), no se vuelve a
+  // registrar aparte -- solo se loguean por separado los rechazados locales
+  // (nombre/cuenta/monto/formato invalido), que nunca llegaron al backend.
+  if(!confirmadoServidor) registrarEscaneo(resultado, datos);
 }
 
 function validarLocal(d, montoEsperado){
@@ -753,8 +813,13 @@ function validarLocal(d, montoEsperado){
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
     m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+' (el comprobante dice: "'+(d.beneficiario||'—')+'").');
-  if(montoEsperado && Number(montoEsperado)>0 && Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
-    m.push('El monto no coincide con la factura.');
+  // El monto de la venta es obligatorio (se pide siempre antes de escanear,
+  // ver mostrarMontoGate) -- si de algun modo llega vacio, se rechaza en vez
+  // de dejarlo pasar sin comparar montos.
+  if(!(Number(montoEsperado)>0))
+    m.push('No se ingresó el monto de la venta antes de escanear.');
+  else if(Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
+    m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto de la venta ($'+Number(montoEsperado).toFixed(2)+').');
   if(!(Number(d.monto)>0))
     m.push('El monto del QR no es válido.');
   if(!RE_UUID.test(String(d.uuid||'')))
@@ -821,7 +886,7 @@ function mostrar(r,d){
     $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
       fila('Cuenta '+(CONFIG.NOMBRE_NEGOCIO||'destino'),'····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
       (r.veredicto==='ALERTA'?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
-      '<div class="chip">'+(GAS_URL.indexOf('PEGA_AQUI')===-1?'Registrado · pendiente de conciliar con el banco':'Válido · registro en Sheet pendiente de conectar')+'</div>';
+      '<div class="chip">Registrado · pendiente de conciliar con el banco</div>';
     lanzarChispas(); hablar(d, r);
   }else{
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
@@ -899,7 +964,7 @@ async function hablarRechazo(r, d){
     let t='Atención. ';
     if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No despachar.';
     else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
-    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||'No se acreditó a la cuenta de Induyes.')+' No despachar.';
+    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No despachar.';
     const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.0;
     const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
@@ -909,10 +974,16 @@ function formatoMontoHablado(monto){
   let t=ent+' dólares'; if(cent>0) t+=' con '+cent+' centavos';
   return t;
 }
-async function reanudar(){
+function reanudar(){
   $('result').className='result'; ocupado=false;
-  $('statusText').textContent='Buscando código…';
-  await iniciarCamara(); // pide la camara de nuevo, limpia (puede haberse liberado para una foto)
+  // Suelta la camara mientras se pide el monto (no hace falta que siga
+  // prendida) -- se vuelve a pedir en btnConfirmarMonto via iniciarCamara().
+  detenerCamara();
+  $('scanUi').classList.remove('on');
+  // Cada nuevo escaneo (proxima venta) vuelve a pedir el monto -- no se
+  // reusa el anterior, para no aceptar por descuido una venta distinta con
+  // el monto de la venta previa.
+  mostrarMontoGate(0);
 }
 
 // --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
