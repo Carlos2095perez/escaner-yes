@@ -13,6 +13,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --ink:#0A163D; --azul-70:#3A4468; --violeta:#6C3AED; --yellow:#FFC700;
@@ -133,33 +136,66 @@ canvas{display:none}
 .cuenta-btn:active{transform:scale(.96)}
 .panel{position:fixed;inset:0;z-index:9;display:none;align-items:flex-end;justify-content:center;background:rgba(4,6,12,.7);backdrop-filter:blur(4px)}
 .panel.on{display:flex}
-.panel-card{width:100%;max-width:420px;background:var(--ink);border-radius:24px 24px 0 0;
-  padding:26px 22px calc(env(safe-area-inset-bottom) + 26px);box-shadow:0 -16px 44px rgba(0,0,0,.5);border-top:1px solid var(--azul-70)}
+.panel-card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:var(--ink);border-radius:24px 24px 0 0;
+  padding:24px 20px calc(env(safe-area-inset-bottom) + 24px);box-shadow:0 -16px 44px rgba(0,0,0,.5);border-top:3px solid var(--violeta)}
 .panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .panel-head h3{font-family:var(--sora);font-weight:700;font-size:19px}
-.panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer}
-.panel-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.pstat{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:16px;padding:16px}
-.pstat .n{font-family:var(--sora);font-weight:800;font-size:22px}
-.pstat .l{font-size:12px;color:var(--muted);margin-top:2px}
-.pc-hero{background:linear-gradient(135deg,rgba(108,58,237,.4),rgba(59,130,246,.22));border:1px solid var(--azul-70);
-  border-radius:16px;padding:18px 20px;margin-bottom:16px;position:relative}
-.pc-hero .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:600}
-.pc-hero .n{font-family:var(--sora);font-weight:800;font-size:36px;margin-top:4px}
-.pc-badge{position:absolute;top:16px;right:16px;font-family:var(--sora);font-weight:700;font-size:11px;padding:5px 10px;border-radius:999px}
-.pc-badge.ok{background:rgba(0,210,106,.2);color:var(--green-hi)}
-.pc-badge.warn{background:rgba(255,199,0,.2);color:var(--yellow)}
-.pc-badge.bad{background:rgba(255,65,82,.2);color:#ff9aa4}
+.panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;flex-shrink:0}
+
+/* Membresia: su propia tarjeta destacada, no un badge pequeno. */
+.pc-membresia{background:linear-gradient(135deg,var(--violeta) 0%,#3B2A78 75%);border-radius:16px;padding:18px 20px;
+  margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:14px;
+  box-shadow:0 10px 30px -10px rgba(108,58,237,.6)}
+.pc-membresia .l{font-size:11px;color:#E7DBFF;text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:700}
+.pc-membresia .nombre-plan{font-family:var(--sora);font-weight:800;font-size:19px;color:#fff;margin-top:3px;text-transform:capitalize}
+.pc-membresia .vence{font-size:12px;color:#D9CBFF;margin-top:4px}
+.pc-membresia .dias{text-align:center;background:rgba(255,255,255,.16);border-radius:14px;padding:10px 16px;min-width:74px;flex-shrink:0}
+.pc-membresia .dias .num{font-family:var(--sora);font-weight:800;font-size:26px;color:#fff;line-height:1}
+.pc-membresia .dias .num.warn{color:var(--yellow)}
+.pc-membresia .dias .num.bad{color:#FF8FA0}
+.pc-membresia .dias .txt{font-size:10px;color:#E7DBFF;text-transform:uppercase;letter-spacing:.04em;margin-top:3px}
+
+.pc-hero{background:linear-gradient(135deg,#00D26A 0%,#049656 100%);border-radius:16px;padding:18px 20px;margin-bottom:14px;
+  box-shadow:0 10px 30px -10px rgba(0,150,80,.5)}
+.pc-hero .l{font-size:12px;color:#DFFFE9;text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:700}
+.pc-hero .n{font-family:var(--sora);font-weight:800;font-size:36px;margin-top:4px;color:#fff}
+
 .pc-chart-wrap{margin-bottom:16px}
-.pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:600;margin-bottom:8px}
+.pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin-bottom:8px}
 .pc-chart{width:100%;height:90px;display:block}
+
+.panel-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.pstat{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:14px;padding:14px;border-left:4px solid var(--violeta)}
+.pstat.ok{border-left-color:var(--green)}
+.pstat.no{border-left-color:var(--red)}
+.pstat.amarillo{border-left-color:var(--yellow)}
+.pstat .n{font-family:var(--sora);font-weight:800;font-size:21px}
+.pstat .l{font-size:11.5px;color:var(--muted);margin-top:2px;font-weight:600}
+
+.pc-movs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.pc-movs-head .pc-chart-title{margin-bottom:0}
+.pc-movs-botones{display:flex;gap:8px}
+.pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
+.pc-mini-btn:active{transform:scale(.95)}
+.pc-mov-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
+.pc-mov-row:last-child{border-bottom:0}
+.pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
+.pc-mov-txt{flex:1;text-align:left}
+.pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
+.pc-mov-monto.ok{color:var(--green-hi)}
+.pc-mov-monto.no{color:#ff9aa4}
+.pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
+
 .powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
   text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
 .powered b{color:rgba(255,255,255,.42);font-weight:700}
 
 /* Modo claro automatico: solo para las pantallas sin camara de fondo
    (login y "Mi cuenta"). La camara en vivo se queda oscura a proposito,
-   para que el HUD se lea bien encima del video sin importar el tema. */
+   para que el HUD se lea bien encima del video sin importar el tema.
+   La membresia y "cobrado hoy" mantienen su gradiente de color en
+   cualquier tema -- son tarjetas de marca, no superficies neutras. */
 @media (prefers-color-scheme: light){
   .gate{background:radial-gradient(90% 55% at 50% 10%, rgba(108,58,237,.08), transparent 60%), #F5F6FA}
   .gate h1{color:#0A163D}
@@ -169,11 +205,15 @@ canvas{display:none}
   .link-tenue{color:#5A6076}
   .powered{color:rgba(10,22,61,.35)}
   .powered b{color:rgba(10,22,61,.5)}
-  .panel-card{background:#F5F6FA;border-top-color:#E4E7F0}
+  .panel-card{background:#F5F6FA;border-top-color:var(--violeta)}
   .panel-head h3{color:#0A163D}
   .panel-close{background:rgba(10,22,61,.08);color:#0A163D}
   .pstat{background:#fff;border-color:#E4E7F0}
   .pstat .n{color:#0A163D}
+  .pc-chart-title{color:#5A6076}
+  .pc-mov-row{border-bottom-color:#E4E7F0}
+  .pc-mov-hora,.pc-mov-txt{color:#0A163D}
+  .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
 }
 </style>
 </head>
@@ -247,16 +287,39 @@ canvas{display:none}
       <h3 id="pcNombre">Mi cuenta</h3>
       <button class="panel-close" id="btnCerrarCuenta">✕</button>
     </div>
+
+    <div class="pc-membresia">
+      <div>
+        <div class="l">Membresía</div>
+        <div class="nombre-plan" id="pcPlan">—</div>
+        <div class="vence" id="pcVence"></div>
+      </div>
+      <div class="dias">
+        <div class="num" id="pcDiasNum">—</div>
+        <div class="txt">días</div>
+      </div>
+    </div>
+
     <div class="pc-hero">
       <div class="l">Cobrado hoy</div>
       <div class="n" id="pcMontoHoy">—</div>
-      <div class="pc-badge" id="pcDias"></div>
     </div>
+
     <div class="pc-chart-wrap">
       <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
       <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
     </div>
+
     <div class="panel-stats" id="pcStats"></div>
+
+    <div class="pc-movs-head">
+      <div class="pc-chart-title">Movimientos de hoy</div>
+      <div class="pc-movs-botones">
+        <button class="pc-mini-btn" id="btnPcExcel">Excel</button>
+        <button class="pc-mini-btn" id="btnPcPdf">PDF</button>
+      </div>
+    </div>
+    <div id="pcMovs"></div>
   </div>
 </div>
 
@@ -839,7 +902,22 @@ async function reanudar(){
 }
 
 // --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
-function pstat(n,l){ return '<div class="pstat"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+const VEREDICTOS_LEGIBLES_PC = { PENDIENTE_CONCILIACION:'Aceptado', ALERTA:'Aceptado (alerta)', RECHAZADO:'Rechazado', DUPLICADO:'Duplicado' };
+const ACEPTADOS_PC = ['PENDIENTE_CONCILIACION','ALERTA'];
+let ultimoDashboard = {};
+
+function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+
+function renderMovimientos(movs){
+  if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">Todavía no has escaneado nada hoy.</div>'; return; }
+  $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
+    const ok=ACEPTADOS_PC.includes(m.veredicto);
+    const hora=new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+    return '<div class="pc-mov-row"><span class="pc-mov-hora">'+hora+'</span>'+
+      '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
+      '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>';
+  }).join('');
+}
 
 // Grafico de barras (SVG, sin librerias) del dinero cobrado en los ultimos 7 dias.
 function renderChart(semana){
@@ -866,30 +944,41 @@ async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
+  $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
   $('pcMontoHoy').textContent='—';
-  $('pcDias').textContent=''; $('pcDias').className='pc-badge';
   $('pcChart').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
+  $('pcMovs').innerHTML='';
   try{
     const { data:{ session } } = await sbc.auth.getSession();
     if(!session) throw new Error('sin sesion');
     const res=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
     const d=await res.json();
     if(!res.ok) throw new Error(d.error||'Error');
+    ultimoDashboard = d;
+
+    $('pcPlan').textContent = d.plan || 'básico';
+    $('pcVence').textContent = d.membresiaVencimiento
+      ? ('Vence '+new Date(d.membresiaVencimiento).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))
+      : 'Sin fecha de vencimiento';
+    if(d.diasRestantes!=null){
+      $('pcDiasNum').textContent=d.diasRestantes;
+      $('pcDiasNum').className='num'+(d.diasRestantes>7?'':(d.diasRestantes>=1?' warn':' bad'));
+    }else{
+      $('pcDiasNum').textContent='∞';
+    }
 
     $('pcMontoHoy').textContent = '$'+((d.hoy&&d.hoy.monto)||0).toFixed(2);
-    if(d.diasRestantes!=null){
-      $('pcDias').textContent = d.diasRestantes+(d.diasRestantes===1?' día':' días');
-      $('pcDias').className = 'pc-badge '+(d.diasRestantes>7?'ok':d.diasRestantes>=1?'warn':'bad');
-    }
 
     renderChart(d.semana);
 
     $('pcStats').innerHTML =
       pstat(d.totalEscaneos||0, 'Escaneos totales') +
-      pstat(d.aceptados||0, 'Aceptados') +
-      pstat(d.rechazados||0, 'Rechazados') +
-      pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana');
+      pstat(d.aceptados||0, 'Aceptados', 'ok') +
+      pstat(d.rechazados||0, 'Rechazados', 'no') +
+      pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana', 'amarillo');
+
+    renderMovimientos(d.movimientosHoy);
   }catch(e){
     $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
   }
@@ -899,6 +988,52 @@ function cerrarCuenta(){
   $('panelCuenta').classList.remove('on');
   iniciarCamara();
 }
+
+$('btnPcPdf').addEventListener('click', () => {
+  const movs = ultimoDashboard.movimientosHoy || [];
+  if(!movs.length){ alert('Todavía no tienes movimientos hoy.'); return; }
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF) throw new Error('No se pudo cargar la librería de PDF (revisa tu conexión).');
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    if(typeof doc.autoTable !== 'function') throw new Error('No se pudo cargar el complemento de tablas del PDF.');
+
+    doc.setFont('helvetica','bold'); doc.setFontSize(16);
+    doc.text('Movimientos de hoy', 14, 18);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90,96,118);
+    doc.text((nombreUsuario||'')+' · '+new Date().toLocaleDateString('es-EC'), 14, 25);
+
+    doc.autoTable({
+      startY: 32,
+      head: [['Hora','Veredicto','Monto']],
+      body: movs.map(m=>[
+        new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}),
+        VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
+        m.monto?'$'+Number(m.monto).toFixed(2):'—',
+      ]),
+      headStyles:{fillColor:[10,22,61]}, styles:{fontSize:9},
+    });
+    doc.save('movimientos-'+new Date().toISOString().slice(0,10)+'.pdf');
+  }catch(e){ alert('No se pudo generar el PDF: '+e.message); }
+});
+
+$('btnPcExcel').addEventListener('click', () => {
+  const movs = ultimoDashboard.movimientosHoy || [];
+  if(!movs.length){ alert('Todavía no tienes movimientos hoy.'); return; }
+  try{
+    if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
+    const filas = movs.map(m=>({
+      Hora: new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}),
+      Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
+      Monto: m.monto?Number(m.monto):'',
+    }));
+    const wb=XLSX.utils.book_new();
+    const ws=XLSX.utils.json_to_sheet(filas);
+    ws['!cols']=[{wch:10},{wch:20},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
+    XLSX.writeFile(wb, 'movimientos-'+new Date().toISOString().slice(0,10)+'.xlsx');
+  }catch(e){ alert('No se pudo generar el Excel: '+e.message); }
+});
 
 // Registra cada intento de escaneo (aceptado o no) para las estadisticas de
 // "mi cuenta". No bloquea la UI: si falla, no afecta el resultado mostrado.
