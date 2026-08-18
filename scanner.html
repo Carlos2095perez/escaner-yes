@@ -337,7 +337,7 @@ async function revisarAcceso(){
 
   $('gateErr').textContent='Verificando acceso...';
   try{
-    const resp=await fetch(NUVO_API+'/api/membership/status', { headers:{ Authorization:'Bearer '+session.access_token } });
+    const resp=await fetch(NUVO_API+'/api/account/dashboard', { headers:{ Authorization:'Bearer '+session.access_token } });
     const m=await resp.json();
     if(!resp.ok){
       $('gateErr').textContent = resp.status===401 ? 'Tu sesión expiró, ingresa de nuevo.' : (m.error||'No se pudo verificar tu acceso.');
@@ -353,7 +353,7 @@ async function revisarAcceso(){
       return;
     }
 
-    const reg=await fetch(NUVO_API+'/api/devices/register', {
+    const reg=await fetch(NUVO_API+'/api/devices?accion=registrar', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
       body: JSON.stringify({ tokenDispositivo: tokenDispositivo(), nombreDispositivo: navigator.userAgent.slice(0,60) })
