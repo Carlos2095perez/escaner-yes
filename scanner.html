@@ -458,7 +458,11 @@ async function revisarAcceso(){
                  // El beneficiario del comprobante se compara en mayusculas (ver
                  // validarLocal) -- si no, el nombre que el admin tipeo con
                  // mayusculas/minusculas normales nunca coincide.
-                 BENEFICIARIO_CLAVES: (cfg.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: cfg.ventanaHoras||36 };
+                 BENEFICIARIO_CLAVES: (cfg.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: cfg.ventanaHoras||36,
+                 // Elegido por el admin en el perfil de este usuario: 'monto'
+                 // pide el monto de la venta antes de escanear (mas seguro),
+                 // 'directo' escanea sin pedir nada (mas rapido).
+                 MODO_ESCANEO: cfg.modoEscaneo==='directo' ? 'directo' : 'monto' };
       }
     }catch(e){ /* si falla, sigue con los valores por defecto (vacios) */ }
 
@@ -472,11 +476,12 @@ async function revisarAcceso(){
       : (m.avisoProximoAVencer ? ('Tu membresía vence en '+m.diasRestantes+' día(s).') : '');
 
     // Si ya activamos la camara antes en este dispositivo, entra directo a
-    // pedir el monto (no hace falta el tap de "Activar camara" de nuevo,
-    // pero el monto de la venta SIEMPRE se pide, en cada escaneo).
+    // escanear (no hace falta el tap de "Activar camara" de nuevo). Si el
+    // modo de este usuario es 'monto', ademas se pide el monto antes de
+    // cada escaneo -- ver comenzarEscaneo().
     if(localStorage.getItem('nuvoCameraGranted')==='1'){
       $('btnStart').style.display='none';
-      mostrarMontoGate(montoURL);
+      comenzarEscaneo(montoURL);
     }else{
       $('btnStart').style.display='inline-flex';
     }
@@ -527,11 +532,13 @@ $('btnFoto').addEventListener('click', ()=>{
   $('fileInput').click();
 });
 
-// El monto de la venta se pide SIEMPRE antes de escanear (primera vez y
-// cada "Escanear otro"): sin esto, un comprobante real pero por un valor
-// menor al de la venta (ej. una transferencia de $0.01 a la cuenta correcta)
-// pasaba como valido porque nada obligaba a comparar contra lo que se
-// estaba cobrando.
+// El monto de la venta se pide antes de escanear (primera vez y cada
+// "Escanear otro") SOLO si el admin configuro este perfil en modo 'monto'
+// (ver CONFIG.MODO_ESCANEO) -- sin esto, un comprobante real pero por un
+// valor menor al de la venta (ej. una transferencia de $0.01 a la cuenta
+// correcta) pasaba como valido porque nada obligaba a comparar contra lo
+// que se estaba cobrando. En modo 'directo' se escanea sin pedir nada,
+// como antes -- decision del admin, no algo forzado para todos los clientes.
 let montoActual=0;
 function mostrarMontoGate(prellenado){
   $('inMonto').value = prellenado>0 ? prellenado.toFixed(2) : '';
@@ -541,14 +548,22 @@ function mostrarMontoGate(prellenado){
   setTimeout(()=>$('inMonto').focus(), 50);
 }
 
-function activar(){ mostrarMontoGate(montoURL); }
+// Punto de entrada unico para arrancar un escaneo (activar por primera vez,
+// o el siguiente despues de "Escanear otro"): decide si hace falta pedir el
+// monto primero, segun el modo configurado para este usuario.
+function comenzarEscaneo(prellenado){
+  if(CONFIG.MODO_ESCANEO==='directo'){
+    montoActual=0;
+    comenzarCamara();
+  }else{
+    mostrarMontoGate(prellenado);
+  }
+}
 
-$('btnConfirmarMonto').addEventListener('click', async ()=>{
-  const v=parseFloat($('inMonto').value);
-  if(!(v>0)){ $('montoErr').textContent='Ingresa un monto válido, mayor a 0.'; return; }
-  montoActual=v;
+function activar(){ comenzarEscaneo(montoURL); }
+
+async function comenzarCamara(){
   try{ const u=new SpeechSynthesisUtterance(' '); u.volume=0; speechSynthesis.speak(u); }catch(e){}
-  $('montoErr').textContent='';
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
@@ -560,6 +575,14 @@ $('btnConfirmarMonto').addEventListener('click', async ()=>{
     $('btnStart').style.display='inline-flex';
     $('gateErr').textContent='No se pudo abrir la cámara. Revisa permisos y reintenta.';
   }
+}
+
+$('btnConfirmarMonto').addEventListener('click', async ()=>{
+  const v=parseFloat($('inMonto').value);
+  if(!(v>0)){ $('montoErr').textContent='Ingresa un monto válido, mayor a 0.'; return; }
+  montoActual=v;
+  $('montoErr').textContent='';
+  await comenzarCamara();
 });
 
 // Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
@@ -813,13 +836,15 @@ function validarLocal(d, montoEsperado){
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
     m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+' (el comprobante dice: "'+(d.beneficiario||'—')+'").');
-  // El monto de la venta es obligatorio (se pide siempre antes de escanear,
-  // ver mostrarMontoGate) -- si de algun modo llega vacio, se rechaza en vez
-  // de dejarlo pasar sin comparar montos.
-  if(!(Number(montoEsperado)>0))
-    m.push('No se ingresó el monto de la venta antes de escanear.');
-  else if(Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
-    m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto de la venta ($'+Number(montoEsperado).toFixed(2)+').');
+  // El monto de la venta solo se exige en modo 'monto' (ver mostrarMontoGate
+  // y CONFIG.MODO_ESCANEO) -- en 'directo' el admin elegio no pedirlo, y el
+  // comprobante se acepta sin comparar montos.
+  if(CONFIG.MODO_ESCANEO!=='directo'){
+    if(!(Number(montoEsperado)>0))
+      m.push('No se ingresó el monto de la venta antes de escanear.');
+    else if(Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
+      m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto de la venta ($'+Number(montoEsperado).toFixed(2)+').');
+  }
   if(!(Number(d.monto)>0))
     m.push('El monto del QR no es válido.');
   if(!RE_UUID.test(String(d.uuid||'')))
@@ -976,14 +1001,15 @@ function formatoMontoHablado(monto){
 }
 function reanudar(){
   $('result').className='result'; ocupado=false;
-  // Suelta la camara mientras se pide el monto (no hace falta que siga
-  // prendida) -- se vuelve a pedir en btnConfirmarMonto via iniciarCamara().
-  detenerCamara();
-  $('scanUi').classList.remove('on');
-  // Cada nuevo escaneo (proxima venta) vuelve a pedir el monto -- no se
-  // reusa el anterior, para no aceptar por descuido una venta distinta con
-  // el monto de la venta previa.
-  mostrarMontoGate(0);
+  // En modo 'monto', suelta la camara mientras se pide el monto de la
+  // proxima venta (no se reusa el monto anterior, para no aceptar por
+  // descuido una venta distinta con el monto de la venta previa). En modo
+  // 'directo' vuelve a escanear de una, como antes.
+  if(CONFIG.MODO_ESCANEO!=='directo'){
+    detenerCamara();
+    $('scanUi').classList.remove('on');
+  }
+  comenzarEscaneo(0);
 }
 
 // --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
