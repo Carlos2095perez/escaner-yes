@@ -30,7 +30,7 @@
 
         <!-- Servicio en primer plano que mantiene la conexion con el lector
              Bluetooth activa aunque el usuario este en otra app. Requiere
-             mostrar una notificacion fija mientras corre -- lo exige Android,
+             mostrar una notificacion fija mientras corre, lo exige Android,
              no se puede evitar. -->
         <service
             android:name=".NuvoScannerService"
