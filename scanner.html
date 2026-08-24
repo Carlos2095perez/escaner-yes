@@ -27,12 +27,6 @@
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
 #video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover}
-/* Se muestra el ultimo frame capturado justo antes de soltar la camara
-   (ver onScan) para que la transicion a "verificando"/resultado sea
-   continua -- sin esto, apagar la camara deja el video en negro un
-   instante y se ve como un parpadeo/corte. */
-#freeze{position:fixed;inset:0;z-index:1;width:100vw;height:100vh;object-fit:cover;display:none}
-#freeze.on{display:block}
 
 /* ---------- Capa de escaneo EN VIVO ---------- */
 .scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;
@@ -244,7 +238,6 @@ canvas{display:none}
 </head>
 <body>
 <video id="video" muted playsinline autoplay></video>
-<img id="freeze" alt="">
 <canvas id="canvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
@@ -629,7 +622,6 @@ async function comenzarCamara(){
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
-    $('freeze').classList.remove('on');
   }else{
     // el permiso de camara pudo fallar/revocarse -- vuelve a la pantalla de activacion.
     $('scanUi').classList.remove('on');
@@ -839,14 +831,14 @@ async function onScan(texto, fotoOverride){
   const datos=parsear(texto);
   if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
   ocupado=true; noHallaDesde=0;
-  // Si viene de la camara en vivo, capturamos el frame ANTES de soltar la
-  // camara. Si viene del plan B de foto, ya nos pasan la foto real (mejor
-  // calidad) y la camara ya esta liberada.
+  // La camara NO se apaga: sigue viva y en pantalla mientras se valida (el
+  // loop de tick() se pausa solo porque revisa "ocupado", no porque se
+  // corte el stream). Asi no hay corte a negro ni congelamiento -- la
+  // camara se ve corriendo hasta el instante en que aparece el resultado
+  // (que sí tapa todo con su propio fondo). Solo se frena el intento de
+  // zoom digital de fondo, que ya no tiene sentido si ya se encontro un QR.
+  detenerZoom();
   const foto=fotoOverride || capturarEvidencia();
-  // Se muestra ese mismo frame como "congelado" ANTES de soltar la camara,
-  // para que la transicion sea continua en vez de un corte a negro.
-  $('freeze').src=foto; $('freeze').classList.add('on');
-  detenerCamara();
   $('verify').classList.add('on');
 
   // 1) Validación inmediata en el navegador (nombre, cuenta, monto, formato,
@@ -1073,15 +1065,20 @@ function formatoMontoHablado(monto){
   return t;
 }
 function reanudar(){
-  $('result').className='result'; ocupado=false;
-  // En modo 'monto', suelta la camara mientras se pide el monto de la
-  // proxima venta (no se reusa el monto anterior, para no aceptar por
-  // descuido una venta distinta con el monto de la venta previa). En modo
-  // 'directo' vuelve a escanear de una, como antes.
-  if(CONFIG.MODO_ESCANEO!=='directo'){
-    detenerCamara();
-    $('scanUi').classList.remove('on');
+  $('result').className='result'; ocupado=false; noHallaDesde=0;
+  if(CONFIG.MODO_ESCANEO==='directo'){
+    // La camara nunca se apago (sigue viva desde el escaneo anterior, ver
+    // onScan) -- alcanza con soltar "ocupado": el loop de tick(), que nunca
+    // se detuvo, retoma solo en el siguiente frame. No hay reinicio de
+    // camara, no hay negociacion de permisos de nuevo: la app queda
+    // escaneando de forma continua, sin cortes entre un comprobante y otro.
+    return;
   }
+  // En modo 'monto' sí se suelta la camara mientras se pide el monto de la
+  // proxima venta (no se reusa el monto anterior, para no aceptar por
+  // descuido una venta distinta con el monto de la venta previa).
+  detenerCamara();
+  $('scanUi').classList.remove('on');
   comenzarEscaneo(0);
 }
 
