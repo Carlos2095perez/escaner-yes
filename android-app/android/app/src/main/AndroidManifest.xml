@@ -36,7 +36,8 @@
             android:name=".NuvoScannerService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice"
+        />
     </application>
 
     <!-- Permissions -->
