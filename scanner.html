@@ -124,10 +124,12 @@ canvas{display:none}
 .toast.show{opacity:1;transform:translateY(0) scale(1)}
 .toast.error{border-color:rgba(255,65,82,.4);background:var(--red-lo)}
 
-/* ---------- Resultado ---------- */
+/* ---------- Resultado: el momento que el operario mira cien veces al dia,
+   con guantes, apurado, con mala luz -- prioridad absoluta a legibilidad
+   instantanea sobre decoracion. ---------- */
 .result{position:fixed;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;padding:34px;text-align:center;overflow:hidden}
-.result.on{display:flex;animation:fadein .3s ease}
-@keyframes fadein{from{opacity:0}to{opacity:1}}
+.result.on{display:flex;animation:resultIn .25s var(--ease-tap)}
+@keyframes resultIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 .result.ok{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%)}
 .result.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
 .badge{position:relative;width:150px;height:150px;display:grid;place-items:center;margin-bottom:8px}
@@ -143,10 +145,13 @@ canvas{display:none}
 .disc svg{width:64px;height:64px}
 .disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
 @keyframes draw{to{stroke-dashoffset:0}}
-.rlabel{font-family:var(--sora);font-weight:700;font-size:14px;letter-spacing:2px;text-transform:uppercase;color:var(--green-hi);margin-bottom:2px}
+.rlabel{font-family:var(--sora);font-weight:800;font-size:26px;letter-spacing:.5px;text-transform:uppercase;color:var(--green-hi);margin-bottom:4px;line-height:1.15}
 .result.bad .rlabel{color:#ff9aa4}
 .amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
-.result.bad .amount{font-size:32px}
+/* En rechazo/duplicado no hay monto que mostrar: este texto (el motivo
+   corto, ej. "No despachar") ES el veredicto -- tiene que leerse tan
+   grande como el monto en el caso aceptado, no quedar chico. */
+.result.bad .amount{font-size:46px;line-height:1.1}
 .card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;font-size:14px}
 .row+.row{border-top:1px solid rgba(255,255,255,.08)}
@@ -157,7 +162,7 @@ canvas{display:none}
 .result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.spin,.frame i{animation:none!important}.disc path{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.frame i,.result.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
