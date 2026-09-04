@@ -15,6 +15,9 @@ on:
       - 'android-app/**'
       - '.github/workflows/build-android.yml'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -57,3 +60,23 @@ jobs:
           name: nuvo-android
           path: android-app/android/app/build/outputs/apk/release/*.apk
           retention-days: 30
+
+      # El artefacto de arriba requiere estar logueado en GitHub, viene en un
+      # .zip que hay que descomprimir, y expira -- muy dificil de instalar
+      # para alguien probando la app en su telefono. Un Release en cambio da
+      # UN SOLO link estable (releases/latest) con el .apk suelto para tocar
+      # y descargar directo, sin login (el repo es publico) ni descomprimir
+      # nada. El tag es siempre el mismo (nuvo-android-test) y se reescribe
+      # en cada build, asi el link nunca cambia.
+      - name: Publicar como Release (link estable para instalar en el telefono)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find android-app/android/app/build/outputs/apk/release -name "*.apk" | head -n1)
+          cp "$APK" NUVO.apk
+          gh release delete nuvo-android-test --yes --cleanup-tag || true
+          git tag -f nuvo-android-test
+          git push origin nuvo-android-test --force
+          gh release create nuvo-android-test NUVO.apk \
+            --title "NUVO -- build de prueba mas reciente" \
+            --notes "Se actualiza solo con cada build nuevo -- este link no cambia. Commit: ${{ github.sha }}"
