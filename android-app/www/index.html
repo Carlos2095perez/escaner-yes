@@ -654,6 +654,27 @@ if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
 }
 
+// Cuando Android manda la app a segundo plano (se bloquea el telefono, se
+// cambia a otra app) el sistema mata el stream de la camara para liberar
+// el hardware -- eso no se puede evitar, es el sistema operativo, no un
+// bug nuestro. El problema era que nada le avisaba al codigo que tenia que
+// pedir la camara de nuevo al volver: la pantalla quedaba negra o con el
+// ultimo frame trabado para siempre. iniciarCamara() ya se encarga de
+// soltar cualquier stream viejo antes de pedir uno nuevo (ver su primera
+// linea, detenerCamara()), asi que alcanza con volver a llamarla.
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState!=='visible' || !escaneando) return;
+  const ok=await iniciarCamara();
+  if(!ok){
+    // iniciarCamara() ya dejo el motivo exacto en gateErr/toast -- esto solo
+    // saca a la persona de una pantalla de escaneo negra sin ninguna salida,
+    // devolviendola al boton de activar para que pueda reintentar a mano.
+    $('scanUi').classList.remove('on');
+    $('gate').style.display='flex';
+    $('btnStart').style.display='inline-flex';
+  }
+});
+
 let voces=[];
 // El WebView de Android (a diferencia de Chrome completo) NO implementa la
 // Web Speech API -- "speechSynthesis" ni siquiera existe como global ahi.
