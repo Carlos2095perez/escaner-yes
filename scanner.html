@@ -655,8 +655,15 @@ if('serviceWorker' in navigator){
 }
 
 let voces=[];
-function cargarVoces(){ voces=speechSynthesis.getVoices(); }
-cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces;
+// El WebView de Android (a diferencia de Chrome completo) NO implementa la
+// Web Speech API -- "speechSynthesis" ni siquiera existe como global ahi.
+// Esto es justo lo que se comio TODOS los event listeners de mas abajo
+// (incluido el de "Activar camara"): esta linea corria sin try/catch al
+// cargar la pagina, tiraba un ReferenceError, y el script se cortaba ahi
+// mismo antes de registrar ningun boton.
+const hayTTS = typeof speechSynthesis!=='undefined';
+function cargarVoces(){ if(hayTTS) voces=speechSynthesis.getVoices(); }
+if(hayTTS){ cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces; }
 
 let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
