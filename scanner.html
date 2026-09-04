@@ -28,7 +28,24 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
-#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover}
+#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover;pointer-events:none}
+/* Si el <video> se queda sin frames nuevos que pintar (track terminado por
+   Android en segundo plano, por ejemplo), Chrome/el WebView puede mostrar
+   sus controles nativos (el triangulo de play) encima. No los queremos
+   nunca -- la UI propia (skeleton, mensajes) es la que comunica el estado,
+   nunca el control nativo del navegador. */
+#video::-webkit-media-controls{display:none!important}
+
+/* ---------- Reactivando la camara (al volver de segundo plano) ----------
+   Android termina los MediaStreamTracks de la camara para liberar el
+   hardware en cuanto la app pasa a segundo plano -- el <video> se queda
+   con un srcObject cuyo track ya esta en "ended", no sirve reanudar la
+   reproduccion, hay que pedir la camara de nuevo. Mientras eso pasa, esto
+   tapa el video (que en ese momento no tiene nada util que mostrar) con
+   un skeleton, nunca con una pantalla negra o el boton de play nativo. */
+.camrestart{position:fixed;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:24px;text-align:center;background:rgba(6,8,14,.92)}
+.camrestart.on{display:flex}
 
 /* ---------- Capa de escaneo EN VIVO ---------- */
 .scan-ui{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;
@@ -309,6 +326,12 @@ canvas{display:none}
 </div>
 
 <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+
+<div class="camrestart" id="camRestart">
+  <div class="skeleton vs-badge"></div>
+  <div class="verify-text">Reactivando cámara…</div>
+  <div class="skeleton vs-line"></div>
+</div>
 
 <div class="verify" id="verify">
   <div class="skeleton vs-badge"></div>
@@ -655,24 +678,19 @@ if('serviceWorker' in navigator){
 }
 
 // Cuando Android manda la app a segundo plano (se bloquea el telefono, se
-// cambia a otra app) el sistema mata el stream de la camara para liberar
-// el hardware -- eso no se puede evitar, es el sistema operativo, no un
-// bug nuestro. El problema era que nada le avisaba al codigo que tenia que
-// pedir la camara de nuevo al volver: la pantalla quedaba negra o con el
-// ultimo frame trabado para siempre. iniciarCamara() ya se encarga de
-// soltar cualquier stream viejo antes de pedir uno nuevo (ver su primera
-// linea, detenerCamara()), asi que alcanza con volver a llamarla.
-document.addEventListener('visibilitychange', async ()=>{
+// cambia a otra app) el sistema TERMINA los MediaStreamTracks de la camara
+// para liberar el hardware -- eso no se puede evitar, es el sistema
+// operativo, no un bug nuestro. El <video> se queda con el srcObject viejo
+// asignado, pero el track ya esta en readyState "ended": no es un problema
+// de "reanudar" la reproduccion (por eso separarlo en su propia funcion,
+// reiniciarCamara(), en vez de solo volver a llamar play()) -- hay que
+// tirar el stream muerto y pedir uno nuevo desde cero con getUserMedia.
+document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState!=='visible' || !escaneando) return;
-  const ok=await iniciarCamara();
-  if(!ok){
-    // iniciarCamara() ya dejo el motivo exacto en gateErr/toast -- esto solo
-    // saca a la persona de una pantalla de escaneo negra sin ninguna salida,
-    // devolviendola al boton de activar para que pueda reintentar a mano.
-    $('scanUi').classList.remove('on');
-    $('gate').style.display='flex';
-    $('btnStart').style.display='inline-flex';
-  }
+  // Si el track sigue "live" (no todos los backgrounds matan la camara),
+  // no hace falta reiniciar nada -- evita un corte/skeleton innecesario.
+  const track=stream && stream.getVideoTracks()[0];
+  if(!track || track.readyState==='ended') reiniciarCamara();
 });
 
 let voces=[];
@@ -776,8 +794,11 @@ $('btnConfirmarMonto').addEventListener('click', async ()=>{
 });
 
 // Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
-// activar por primera vez como para reanudar despues de un intento con foto.
-async function iniciarCamara(){
+// activar por primera vez como para reanudar despues de un intento con foto
+// y desde reiniciarCamara() (ver mas abajo). `silencioso` evita el toast de
+// error propio cuando quien llama (reiniciarCamara) ya va a mostrar el suyo
+// con boton de Reintentar, para no apilar dos toasts por el mismo fallo.
+async function iniciarCamara(silencioso){
   detenerCamara();
   try{
     // ideal (no exact): el navegador se acerca lo mas que pueda sin fallar si
@@ -802,8 +823,26 @@ async function iniciarCamara(){
     // de verdad la primera vez que alguien reporte "no pasa nada".
     const detalle=(e && (e.name||e.message)) ? (e.name||'')+(e.message?': '+e.message:'') : String(e);
     $('gateErr').textContent='No se pudo abrir la cámara ('+detalle+'). Revisa permisos y reintenta.';
-    toast('Cámara: '+detalle, 'error');
+    if(!silencioso) toast('Cámara: '+detalle, 'error');
     return false;
+  }
+}
+
+// Reconstruye el stream de la camara desde cero (no "reanuda" nada -- el
+// track viejo ya esta muerto, ver el comentario del listener de
+// visibilitychange). Mientras tanto tapa el video con un skeleton, nunca
+// con una pantalla negra o el control de play nativo del navegador. Si
+// falla, un toast con boton "Reintentar" en vez de dejar a la persona
+// varada sin ninguna salida.
+async function reiniciarCamara(){
+  $('camRestart').classList.add('on');
+  const ok=await iniciarCamara(true);
+  $('camRestart').classList.remove('on');
+  if(!ok){
+    $('scanUi').classList.remove('on');
+    $('gate').style.display='flex';
+    $('btnStart').style.display='inline-flex';
+    toast('No se pudo reactivar la cámara. Revisa permisos y reintenta.', 'error', reiniciarCamara);
   }
 }
 
