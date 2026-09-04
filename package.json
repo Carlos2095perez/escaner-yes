@@ -1,0 +1,14 @@
+{
+  "name": "escaner-yes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Escaner de comprobantes NUVO (PWA + fuente para el empaquetado Android)",
+  "scripts": {
+    "build:css": "tailwindcss -i ./src/input.css -o ./styles.css --minify && cp styles.css android-app/www/styles.css",
+    "watch:css": "tailwindcss -i ./src/input.css -o ./styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.14",
+    "tailwindcss": "^4.1.14"
+  }
+}
