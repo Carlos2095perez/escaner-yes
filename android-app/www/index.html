@@ -1172,6 +1172,25 @@ function lanzarChispas(){
 function vozEs(){
   return voces.find(x=>/es[-_]?(US|419|MX|ES)/i.test(x.lang))||voces.find(x=>/^es/i.test(x.lang));
 }
+// Dice un texto en voz alta. El WebView de Android empaquetado no
+// implementa la Web Speech API (speechSynthesis no existe ahi) -- por eso
+// el aviso hablado, que es el corazon de la app, tiene que salir por el
+// plugin nativo (TextToSpeech real de Android, via NuvoScannerPlugin.hablar)
+// cuando corre como app instalada. Si corre como PWA en un navegador de
+// verdad (Chrome, etc.), ahi si existe speechSynthesis y se usa esa.
+function decir(texto){
+  const nativo = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()
+    && window.Capacitor.Plugins && window.Capacitor.Plugins.NuvoScanner;
+  if(nativo){
+    window.Capacitor.Plugins.NuvoScanner.hablar({texto}).catch(()=>{});
+    return;
+  }
+  if(!hayTTS) return;
+  try{
+    const u=new SpeechSynthesisUtterance(texto); u.lang='es-ES'; u.rate=1.0;
+    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+  }catch(e){}
+}
 function hablar(d, r){
   try{
     const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
@@ -1182,8 +1201,7 @@ function hablar(d, r){
     if(r && r.veredicto==='ALERTA'){
       t+=' Atención: '+(r.motivos||[]).join(' ');
     }
-    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.02;
-    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+    decir(t);
   }catch(e){}
 }
 // Sirena corta (sube y baja de tono) que antecede el aviso hablado de un
@@ -1218,8 +1236,7 @@ async function hablarRechazo(r, d){
     if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No despachar.';
     else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
     else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No despachar.';
-    const u=new SpeechSynthesisUtterance(t); u.lang='es-ES'; u.rate=1.0;
-    const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
+    decir(t);
   }catch(e){}
 }
 function formatoMontoHablado(monto){
