@@ -22,6 +22,7 @@
   --ink:#0A163D; --azul-70:#3A4468; --violeta:#6C3AED; --yellow:#FFC700;
   --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
   --red:#FF4152; --red-lo:#2A0E12; --white:#FFFFFF; --muted:#9AA1AA;
+  --amber:#FF9F1C; --amber-lo:#2A1704; --amber-hi:#FFD180;
   --sora:'Poppins',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -102,16 +103,19 @@ canvas{display:none}
 .gate input::placeholder{color:var(--muted)}
 .link-tenue{pointer-events:auto;background:none;border:0;color:var(--muted);font-size:13px;text-decoration:underline;cursor:pointer;font-family:var(--inter)}
 
-/* ---------- Confirmando con el servidor: skeleton con la forma del
-   resultado que va a aparecer (no un spinner gris generico) ---------- */
-.verify{position:fixed;inset:0;z-index:7;display:none;place-items:center;background:rgba(6,8,10,.15);pointer-events:none}
-.verify.on{display:grid}
-.verify-card{width:min(78vw,300px);background:rgba(10,22,61,.9);border:1px solid rgba(255,255,255,.1);
-  border-radius:var(--radius-card);padding:22px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;
-  backdrop-filter:blur(10px)}
-.vs-badge{width:52px;height:52px;border-radius:50%}
-.vs-line{height:12px;width:100%;border-radius:6px}
-.vs-line-2{width:65%}
+/* ---------- Confirmando con el servidor: pantalla completa con scrim
+   oscuro (no un cuadro flotante sobre la camara), texto explicito + skeleton
+   con la forma del resultado que va a aparecer -- el peor momento para no
+   comunicar nada es este, el operario no puede saber si sigue vivo. ---------- */
+.verify{position:fixed;inset:0;z-index:7;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;padding:24px;text-align:center;background:rgba(6,8,14,.82);opacity:0;pointer-events:none}
+.verify.on{display:flex;pointer-events:auto;animation:verifyIn .15s var(--ease-tap) forwards}
+@keyframes verifyIn{to{opacity:1}}
+.verify-text{font-family:var(--sora);font-weight:700;font-size:17px;color:#fff}
+.verify-slow{font-family:var(--inter);font-size:13px;color:var(--muted);max-width:280px}
+.vs-badge{width:52px;height:52px;border-radius:50%;margin-bottom:2px}
+.vs-line{height:12px;width:min(78vw,220px);border-radius:6px}
+.vs-line-2{width:min(55vw,150px)}
 
 /* ---------- Toast propio (reemplaza alert()) ---------- */
 .toast-wrap{position:fixed;left:0;right:0;bottom:max(18px,env(safe-area-inset-bottom));z-index:60;
@@ -132,6 +136,11 @@ canvas{display:none}
 @keyframes resultIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 .result.ok{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%)}
 .result.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
+/* Duplicado (comprobante legitimo pero repetido) NO es lo mismo que
+   rechazado (comprobante invalido/posible fraude): comparten el mismo
+   rojo hoy y el operario no puede distinguirlos de un vistazo. Ambar
+   propio + icono propio para "revisar", en vez del rojo de "no despachar". */
+.result.dup{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
 .badge{position:relative;width:150px;height:150px;display:grid;place-items:center;margin-bottom:8px}
 .rings{position:absolute;inset:0;display:grid;place-items:center}
 .rings b{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid var(--green);opacity:0}
@@ -141,17 +150,22 @@ canvas{display:none}
 .disc{width:118px;height:118px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
   background:radial-gradient(circle at 50% 35%, var(--green-hi), var(--green));box-shadow:0 0 46px -4px var(--green);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
 .result.bad .disc{background:radial-gradient(circle at 50% 35%, #ff7d89, var(--red));box-shadow:0 0 46px -4px var(--red)}
+.result.dup .disc{background:radial-gradient(circle at 50% 35%, var(--amber-hi), var(--amber));box-shadow:0 0 46px -4px var(--amber)}
 @keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
 .disc svg{width:64px;height:64px}
 .disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
 @keyframes draw{to{stroke-dashoffset:0}}
-.rlabel{font-family:var(--sora);font-weight:800;font-size:26px;letter-spacing:.5px;text-transform:uppercase;color:var(--green-hi);margin-bottom:4px;line-height:1.15}
+/* 36px: el veredicto (aceptado/rechazado/duplicado) es el dato mas
+   importante de la pantalla -- el operario necesita eso antes que el
+   monto -- asi que pesa mas que la etiqueta anterior de 26px. */
+.rlabel{font-family:var(--sora);font-weight:800;font-size:36px;letter-spacing:.3px;text-transform:uppercase;color:var(--green-hi);margin-bottom:4px;line-height:1.1}
 .result.bad .rlabel{color:#ff9aa4}
+.result.dup .rlabel{color:var(--amber-hi)}
 .amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
 /* En rechazo/duplicado no hay monto que mostrar: este texto (el motivo
    corto, ej. "No despachar") ES el veredicto -- tiene que leerse tan
    grande como el monto en el caso aceptado, no quedar chico. */
-.result.bad .amount{font-size:46px;line-height:1.1}
+.result.bad .amount,.result.dup .amount{font-size:46px;line-height:1.1}
 .card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
 .row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;font-size:14px}
 .row+.row{border-top:1px solid rgba(255,255,255,.08)}
@@ -161,8 +175,9 @@ canvas{display:none}
 .again{margin-top:22px}
 .result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
 .result.bad .again{background:#fff;color:#1a1a1a}
+.result.dup .again{background:var(--amber);color:#2A1704}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.frame i,.result.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.frame i,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -286,11 +301,11 @@ canvas{display:none}
 <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
 
 <div class="verify" id="verify">
-  <div class="verify-card">
-    <div class="skeleton vs-badge"></div>
-    <div class="skeleton vs-line"></div>
-    <div class="skeleton vs-line vs-line-2"></div>
-  </div>
+  <div class="skeleton vs-badge"></div>
+  <div class="verify-text">Verificando comprobante…</div>
+  <div class="skeleton vs-line"></div>
+  <div class="skeleton vs-line vs-line-2"></div>
+  <div class="verify-slow" id="verifySlow" hidden>La conexión está lenta, seguimos intentando…</div>
 </div>
 
 <div class="result" id="result">
@@ -385,7 +400,7 @@ let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[],
 const RE_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_HASH=/^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
-const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35';
+const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35', DUP='M26 13 L26 31 M26 39 L26 39.1';
 const $=id=>document.getElementById(id);
 // Toast propio (reemplaza alert()): no bloquea el hilo ni tapa la pantalla,
 // se anima solo con transform/opacity y desaparece sola.
@@ -885,6 +900,9 @@ async function onScan(texto, fotoOverride){
   detenerZoom();
   const foto=fotoOverride || capturarEvidencia();
   $('verify').classList.add('on');
+  // Si a los 4s el servidor todavia no respondio, se lo decimos -- una
+  // pantalla oscura sin texto es el peor momento para no comunicar nada.
+  const timerLento=setTimeout(()=>{ $('verifySlow').hidden=false; }, 4000);
 
   // 1) Validación inmediata en el navegador (nombre, cuenta, monto, formato,
   //    ventana horaria -- no depende del backend, es instantánea).
@@ -918,16 +936,22 @@ async function onScan(texto, fotoOverride){
           resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
         }
       }else{
+        toast('No se pudo confirmar con el servidor. Revisando en modo local.', 'error');
         resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) };
       }
     }catch(e){
       // Sin conexion: no se puede verificar que el comprobante no este
       // repetido. No se bloquea la venta (el negocio tiene que poder seguir
-      // vendiendo offline), pero se avisa en vez de aceptarlo en silencio.
+      // vendiendo offline), pero se avisa -- con toast INMEDIATO ademas del
+      // motivo que ya queda escrito en la pantalla de resultado -- en vez
+      // de degradar en silencio.
+      toast('Sin conexión: no se pudo verificar que el comprobante no esté repetido.', 'error');
       resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) };
     }
   }
 
+  clearTimeout(timerLento);
+  $('verifySlow').hidden=true;
   $('verify').classList.remove('on');
   mostrar(resultado, datos);
   // Si el backend ya registro este escaneo (dedup incluido), no se vuelve a
@@ -1010,8 +1034,12 @@ function parsear(t){
 
 function mostrar(r,d){
   const ok=(r.veredicto==='PENDIENTE_CONCILIACION'||r.veredicto==='ALERTA'||r.ok);
-  const box=$('result'); box.className='result on '+(ok?'ok':'bad');
-  $('mark').innerHTML='<path d="'+(ok?CHECK:CROSS)+'"/>';
+  // Duplicado (comprobante legitimo, ya usado antes) es operativamente
+  // distinto de rechazado (comprobante invalido) -- color e icono propios,
+  // no comparten el rojo de "no despachar" (ver clase .dup en el CSS).
+  const dup=!ok && r.veredicto==='DUPLICADO';
+  const box=$('result'); box.className='result on '+(ok?'ok':(dup?'dup':'bad'));
+  $('mark').innerHTML='<path d="'+(ok?CHECK:(dup?DUP:CROSS))+'"/>';
   // Vibracion corta al aceptar, patron mas largo/duro al rechazar (util en lugares ruidosos).
   try{ if(navigator.vibrate) navigator.vibrate(ok ? 60 : [80,60,80,60,120]); }catch(e){}
   if(ok && d){
