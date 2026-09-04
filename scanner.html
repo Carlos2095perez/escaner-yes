@@ -970,6 +970,7 @@ async function confirmarConServidor(datos, resultadoLocal){
         comprobante: datos.comprobante || null,
         qrUuid: datos.uuid || null,
         qrHash: datos.hash || null,
+        ordenante: datos.ordenante || null,
       }),
     });
     const body=await resp.json().catch(()=>({}));
