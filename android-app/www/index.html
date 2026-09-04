@@ -1081,13 +1081,17 @@ function validarLocal(d, montoEsperado){
   // de esta misma tarde aparece "hecha hace 14 horas" solo porque se mide
   // desde la medianoche, no desde el momento real -- confirmado escaneando
   // dos comprobantes reales del dia anterior y de 4 dias antes, los dos con
-  // el timestamp exacto en 00:00:00 Ecuador. La comparacion correcta es por
-  // DIA CALENDARIO (lo unico que el banco de verdad informa), no por horas.
+  // el timestamp exacto en 00:00:00 Ecuador.
+  //
+  // Solo el comprobante del MISMO dia calendario pasa sin aviso -- no tiene
+  // sentido de negocio que alguien pague hoy con una transferencia de ayer
+  // o de antes, sin importar cuantas horas "permita" la configuracion. Por
+  // eso esta comparacion ya NO usa CONFIG.VENTANA_HORAS (queda sin efecto
+  // aqui; el campo del panel admin sigue existiendo pero no controla esto).
   const diasTranscurridos=Math.max(0, diaEcuadorDe(Date.now())-diaEcuadorDe(ts));
-  const diasPermitidos=Math.max(1, Math.ceil(CONFIG.VENTANA_HORAS/24));
-  if(diasTranscurridos>diasPermitidos){
+  if(diasTranscurridos>0){
     const etiqueta=diasTranscurridos===1?'ayer':diasTranscurridos+' días atrás';
-    return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. El banco no informa la hora exacta, solo el día. Revisar antes de despachar.']};
+    return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. Revisar antes de despachar.']};
   }
 
   return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'], ok:true};
