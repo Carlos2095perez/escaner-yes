@@ -419,11 +419,18 @@ const $=id=>document.getElementById(id);
 // mira la pantalla, no la de Ecuador -- 'es-EC' solo controla el idioma/
 // formato. Todo el codigo tiene que pasar por aca para que este bug no
 // pueda reaparecer en un call-site nuevo.
-function formatearFechaEC(fecha, soloHora){
+function formatearFechaEC(fecha, modo){
   const d = fecha instanceof Date ? fecha : new Date(fecha);
-  return soloHora
+  if(modo==='fecha') return d.toLocaleDateString('es-EC', { day:'numeric', month:'long', timeZone:'America/Guayaquil' });
+  return modo
     ? d.toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit', timeZone:'America/Guayaquil' })
     : d.toLocaleString('es-EC', { dateStyle:'short', timeStyle:'short', timeZone:'America/Guayaquil' });
+}
+// Ecuador es siempre UTC-5 (sin horario de verano). Devuelve el numero de
+// dia calendario Ecuador (dias desde epoch) de un instante -- restando dos
+// de estos da la diferencia exacta en DIAS calendario, sin importar la hora.
+function diaEcuadorDe(epochMs){
+  return Math.floor((epochMs - 5*3600*1000) / 86400000);
 }
 // Toast propio (reemplaza alert()): no bloquea el hilo ni tapa la pantalla,
 // se anima solo con transform/opacity y desaparece sola.
@@ -1068,24 +1075,22 @@ function validarLocal(d, montoEsperado){
     m.push('La fecha del comprobante no es válida.');
   if(m.length) return {veredicto:'RECHAZADO', motivos:m};
 
-  const horas=(Date.now()-ts)/3.6e6;
-  if(horas>CONFIG.VENTANA_HORAS)
-    return {veredicto:'ALERTA', motivos:['El comprobante fue hecho '+tiempoRelativo(ts)+'. Revisar antes de despachar.']};
+  // El QR del banco NO trae la hora real de la transferencia -- trae la
+  // medianoche (hora Ecuador) del dia en que se hizo. Comparar en HORAS
+  // contra Date.now() (como se hacia antes) es un error de raiz: una venta
+  // de esta misma tarde aparece "hecha hace 14 horas" solo porque se mide
+  // desde la medianoche, no desde el momento real -- confirmado escaneando
+  // dos comprobantes reales del dia anterior y de 4 dias antes, los dos con
+  // el timestamp exacto en 00:00:00 Ecuador. La comparacion correcta es por
+  // DIA CALENDARIO (lo unico que el banco de verdad informa), no por horas.
+  const diasTranscurridos=Math.max(0, diaEcuadorDe(Date.now())-diaEcuadorDe(ts));
+  const diasPermitidos=Math.max(1, Math.ceil(CONFIG.VENTANA_HORAS/24));
+  if(diasTranscurridos>diasPermitidos){
+    const etiqueta=diasTranscurridos===1?'ayer':diasTranscurridos+' días atrás';
+    return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. El banco no informa la hora exacta, solo el día. Revisar antes de despachar.']};
+  }
 
   return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'], ok:true};
-}
-
-// Formatea una fecha pasada como texto relativo legible: "hace 1 minuto", "hace 5 horas", etc.
-function tiempoRelativo(ts){
-  const min=Math.round((Date.now()-ts)/60000);
-  if(min<1) return 'hace unos segundos';
-  if(min===1) return 'hace 1 minuto';
-  if(min<60) return 'hace '+min+' minutos';
-  const horas=Math.round(min/60);
-  if(horas===1) return 'hace 1 hora';
-  if(horas<24) return 'hace '+horas+' horas';
-  const dias=Math.round(horas/24);
-  return dias===1?'hace 1 día':'hace '+dias+' días';
 }
 
 // Tipos de comprobante conocidos: transferencia bancaria directa (BP_TO_DEUNA)
@@ -1102,12 +1107,6 @@ function parsear(t){
   if(p.length<13 || !RE_TIPO_VALIDO.test(p[1]||'')) return null;
   const rawTs=p[9];
   const timestamp = rawTs.length>10 ? parseInt(rawTs,10) : parseInt(rawTs,10)*1000; // ya en ms vs segundos
-  // LOG TEMPORAL DE DIAGNOSTICO -- bug de "hace X horas" con datos falsos.
-  // Sacar despues de confirmar donde esta el desfase (ver DESIGN.md/chat).
-  console.log('[DIAG hora] rawTs (p[9], crudo del QR):', rawTs,
-    '| Date resultante:', new Date(timestamp).toISOString(),
-    '| Date.now():', Date.now(), new Date(Date.now()).toISOString(),
-    '| diferencia (horas):', (Date.now()-timestamp)/3.6e6);
   return {ordenante:p[3],ctaOrigen:p[4],beneficiario:p[6],ctaDestino:p[7],
           monto:parseFloat(p[8]),timestamp:timestamp,uuid:p[10],comprobante:p[11],hash:p[12]};
 }
