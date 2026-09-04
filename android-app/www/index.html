@@ -122,11 +122,14 @@ canvas{display:none}
   display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;padding:0 16px}
 .toast{max-width:360px;width:100%;background:var(--ink);border:1px solid rgba(255,255,255,.14);
   color:#fff;font-family:var(--inter);font-size:13.5px;line-height:1.35;padding:12px 16px;
+  display:flex;align-items:center;gap:12px;justify-content:space-between;
   border-radius:var(--radius-card);box-shadow:0 12px 30px -10px rgba(0,0,0,.6);backdrop-filter:blur(8px);
-  opacity:0;transform:translateY(10px) scale(.98);
+  opacity:0;transform:translateY(10px) scale(.98);pointer-events:auto;
   transition:opacity var(--duration-sheet) var(--ease-tap),transform var(--duration-sheet) var(--ease-tap)}
 .toast.show{opacity:1;transform:translateY(0) scale(1)}
 .toast.error{border-color:rgba(255,65,82,.4);background:var(--red-lo)}
+.toast-retry{flex-shrink:0;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.3);
+  color:#fff;font-family:var(--sora);font-weight:700;font-size:12px;padding:7px 13px;border-radius:999px;cursor:pointer}
 
 /* ---------- Resultado: el momento que el operario mira cien veces al dia,
    con guantes, apurado, con mala luz -- prioridad absoluta a legibilidad
@@ -402,9 +405,21 @@ const RE_HASH=/^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
 const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35', DUP='M26 13 L26 31 M26 39 L26 39.1';
 const $=id=>document.getElementById(id);
+// Unica fuente de verdad para mostrar una fecha/hora al usuario. El bug real
+// no era el almacenamiento (creado_en es timestamptz, correcto) sino que
+// toLocaleString('es-EC') sin `timeZone` usa la zona del DISPOSITIVO que
+// mira la pantalla, no la de Ecuador -- 'es-EC' solo controla el idioma/
+// formato. Todo el codigo tiene que pasar por aca para que este bug no
+// pueda reaparecer en un call-site nuevo.
+function formatearFechaEC(fecha, soloHora){
+  const d = fecha instanceof Date ? fecha : new Date(fecha);
+  return soloHora
+    ? d.toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit', timeZone:'America/Guayaquil' })
+    : d.toLocaleString('es-EC', { dateStyle:'short', timeStyle:'short', timeZone:'America/Guayaquil' });
+}
 // Toast propio (reemplaza alert()): no bloquea el hilo ni tapa la pantalla,
 // se anima solo con transform/opacity y desaparece sola.
-function toast(msg, tipo){
+function toast(msg, tipo, onRetry){
   let wrap=$('toastWrap');
   if(!wrap){
     wrap=document.createElement('div');
@@ -414,13 +429,22 @@ function toast(msg, tipo){
   }
   const t=document.createElement('div');
   t.className='toast'+(tipo==='error'?' error':'');
-  t.textContent=msg;
+  const msgEl=document.createElement('span');
+  msgEl.textContent=msg;
+  t.appendChild(msgEl);
+  const cerrar=()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(), 220); };
+  // "Reintentar" opcional, nunca bloqueante: el toast desaparece solo igual,
+  // el boton es solo para el que quiere confirmar con el servidor de nuevo
+  // sin volver a escanear.
+  if(onRetry){
+    const btn=document.createElement('button');
+    btn.type='button'; btn.className='toast-retry pressable'; btn.textContent='Reintentar';
+    btn.addEventListener('click', ()=>{ cerrar(); onRetry(); });
+    t.appendChild(btn);
+  }
   wrap.appendChild(t);
   requestAnimationFrame(()=>t.classList.add('show'));
-  setTimeout(()=>{
-    t.classList.remove('show');
-    setTimeout(()=>t.remove(), 220);
-  }, 3200);
+  setTimeout(cerrar, onRetry ? 6000 : 3200);
 }
 const params=new URLSearchParams(location.search);
 const vCode=params.get('v')||'';
@@ -906,7 +930,8 @@ async function onScan(texto, fotoOverride){
 
   // 1) Validación inmediata en el navegador (nombre, cuenta, monto, formato,
   //    ventana horaria -- no depende del backend, es instantánea).
-  let resultado=validarLocal(datos, montoActual);
+  const resultadoLocal=validarLocal(datos, montoActual);
+  let resultado=resultadoLocal;
 
   // 2) Si localmente el comprobante parece válido, se confirma con el backend
   //    ANTES de mostrar nada: solo el servidor puede saber si este mismo
@@ -915,39 +940,9 @@ async function onScan(texto, fotoOverride){
   //    complementarla -- si el backend dice que es duplicado, gana el backend.
   let confirmadoServidor=false;
   if(resultado.veredicto==='PENDIENTE_CONCILIACION' || resultado.veredicto==='ALERTA'){
-    try{
-      const { data:{ session } } = await sbc.auth.getSession();
-      const resp=await fetch(NUVO_API+'/api/scans/log', {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
-        body: JSON.stringify({
-          veredicto: resultado.veredicto,
-          monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
-          vendedor: vCode || null,
-          comprobante: datos.comprobante || null,
-          qrUuid: datos.uuid || null,
-          qrHash: datos.hash || null,
-        }),
-      });
-      const body=await resp.json().catch(()=>({}));
-      if(resp.ok){
-        confirmadoServidor=true;
-        if(body.duplicado){
-          resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
-        }
-      }else{
-        toast('No se pudo confirmar con el servidor. Revisando en modo local.', 'error');
-        resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) };
-      }
-    }catch(e){
-      // Sin conexion: no se puede verificar que el comprobante no este
-      // repetido. No se bloquea la venta (el negocio tiene que poder seguir
-      // vendiendo offline), pero se avisa -- con toast INMEDIATO ademas del
-      // motivo que ya queda escrito en la pantalla de resultado -- en vez
-      // de degradar en silencio.
-      toast('Sin conexión: no se pudo verificar que el comprobante no esté repetido.', 'error');
-      resultado={ veredicto:'ALERTA', motivos:(resultado.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) };
-    }
+    const r1=await confirmarConServidor(datos, resultadoLocal);
+    resultado=r1.resultado; confirmadoServidor=r1.confirmadoServidor;
+    if(r1.fallo) toast(r1.mensajeError, 'error', ()=>reintentarConfirmacion(datos, resultadoLocal));
   }
 
   clearTimeout(timerLento);
@@ -958,6 +953,57 @@ async function onScan(texto, fotoOverride){
   // registrar aparte -- solo se loguean por separado los rechazados locales
   // (nombre/cuenta/monto/formato invalido), que nunca llegaron al backend.
   if(!confirmadoServidor) registrarEscaneo(resultado, datos);
+}
+
+// Confirmacion con el backend, separada de onScan() para poder reintentarla
+// desde el boton del toast sin tener que volver a escanear el QR.
+async function confirmarConServidor(datos, resultadoLocal){
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    const resp=await fetch(NUVO_API+'/api/scans/log', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
+      body: JSON.stringify({
+        veredicto: resultadoLocal.veredicto,
+        monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
+        vendedor: vCode || null,
+        comprobante: datos.comprobante || null,
+        qrUuid: datos.uuid || null,
+        qrHash: datos.hash || null,
+      }),
+    });
+    const body=await resp.json().catch(()=>({}));
+    if(resp.ok){
+      if(body.duplicado){
+        return { resultado:{ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] }, confirmadoServidor:true, fallo:false };
+      }
+      return { resultado:resultadoLocal, confirmadoServidor:true, fallo:false };
+    }
+    return {
+      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) },
+      confirmadoServidor:false, fallo:true, mensajeError:'No se pudo confirmar con el servidor. Revisando en modo local.',
+    };
+  }catch(e){
+    // Sin conexion: no se puede verificar que el comprobante no este
+    // repetido. No se bloquea la venta (el negocio tiene que poder seguir
+    // vendiendo offline), pero se avisa -- con toast INMEDIATO ademas del
+    // motivo que ya queda escrito en la pantalla de resultado -- en vez
+    // de degradar en silencio.
+    return {
+      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) },
+      confirmadoServidor:false, fallo:true, mensajeError:'Sin conexión: no se pudo verificar que el comprobante no esté repetido.',
+    };
+  }
+}
+
+// Reintento manual (boton "Reintentar" del toast): repite la confirmacion
+// para el mismo comprobante ya escaneado y actualiza la pantalla de
+// resultado si cambia -- nunca bloquea, el operario ya vio un resultado y
+// puede seguir vendiendo aunque no toque el boton.
+async function reintentarConfirmacion(datos, resultadoLocal){
+  const r=await confirmarConServidor(datos, resultadoLocal);
+  mostrar(r.resultado, datos);
+  if(r.fallo) toast(r.mensajeError, 'error', ()=>reintentarConfirmacion(datos, resultadoLocal));
 }
 
 function validarLocal(d, montoEsperado){
@@ -1028,6 +1074,12 @@ function parsear(t){
   if(p.length<13 || !RE_TIPO_VALIDO.test(p[1]||'')) return null;
   const rawTs=p[9];
   const timestamp = rawTs.length>10 ? parseInt(rawTs,10) : parseInt(rawTs,10)*1000; // ya en ms vs segundos
+  // LOG TEMPORAL DE DIAGNOSTICO -- bug de "hace X horas" con datos falsos.
+  // Sacar despues de confirmar donde esta el desfase (ver DESIGN.md/chat).
+  console.log('[DIAG hora] rawTs (p[9], crudo del QR):', rawTs,
+    '| Date resultante:', new Date(timestamp).toISOString(),
+    '| Date.now():', Date.now(), new Date(Date.now()).toISOString(),
+    '| diferencia (horas):', (Date.now()-timestamp)/3.6e6);
   return {ordenante:p[3],ctaOrigen:p[4],beneficiario:p[6],ctaDestino:p[7],
           monto:parseFloat(p[8]),timestamp:timestamp,uuid:p[10],comprobante:p[11],hash:p[12]};
 }
@@ -1166,7 +1218,7 @@ function renderMovimientos(movs){
   if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">Todavía no has escaneado nada hoy.</div>'; return; }
   $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
     const ok=ACEPTADOS_PC.includes(m.veredicto);
-    const hora=new Date(m.fecha).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'});
+    const hora=formatearFechaEC(m.fecha, true);
     return '<div class="pc-mov-row"><span class="pc-mov-hora">'+hora+'</span>'+
       '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
       '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>';
@@ -1301,7 +1353,7 @@ $('btnPcPdf').addEventListener('click', () => {
       startY: 47,
       head: [['Fecha','Veredicto','Monto']],
       body: movs.map(m=>[
-        new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
+        formatearFechaEC(m.fecha),
         VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
         m.monto?'$'+Number(m.monto).toFixed(2):'—',
       ]),
@@ -1324,7 +1376,7 @@ $('btnPcExcel').addEventListener('click', () => {
     if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
     const desde=$('pcDesde').value, hasta=$('pcHasta').value;
     const filas = movs.map(m=>({
-      Fecha: new Date(m.fecha).toLocaleString('es-EC',{dateStyle:'short',timeStyle:'short'}),
+      Fecha: formatearFechaEC(m.fecha),
       Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
       Monto: m.monto?Number(m.monto):'',
     }));
