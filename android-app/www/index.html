@@ -810,8 +810,22 @@ async function iniciarCamara(silencioso){
       width:{ideal:1920}, height:{ideal:1920},
       focusMode:'continuous'
     }, audio:false});
+    // LOG TEMPORAL DE DIAGNOSTICO -- boton de play nativo que sigue
+    // apareciendo encima del video. Sacar una vez confirmada la causa real.
+    const trackDiag=stream.getVideoTracks()[0];
+    console.log('[DIAG cam] getUserMedia OK. track.readyState:', trackDiag && trackDiag.readyState,
+      '| track.label:', trackDiag && trackDiag.label,
+      '| settings:', trackDiag && trackDiag.getSettings && JSON.stringify(trackDiag.getSettings()));
     video.srcObject=stream;
-    await video.play();
+    try{
+      await video.play();
+      console.log('[DIAG cam] video.play() OK. video.paused:', video.paused,
+        '| videoWidth:', video.videoWidth, '| videoHeight:', video.videoHeight,
+        '| readyState:', video.readyState, '| muted attr:', video.hasAttribute('muted'), '| video.muted:', video.muted);
+    }catch(playErr){
+      console.log('[DIAG cam] video.play() RECHAZADO:', playErr && playErr.name, '|', playErr && playErr.message);
+      throw playErr;
+    }
     detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
     requestAnimationFrame(tick);
@@ -822,6 +836,7 @@ async function iniciarCamara(silencioso){
     // getUserMedia ni siquiera exista en este contexto) para saber que paso
     // de verdad la primera vez que alguien reporte "no pasa nada".
     const detalle=(e && (e.name||e.message)) ? (e.name||'')+(e.message?': '+e.message:'') : String(e);
+    console.log('[DIAG cam] iniciarCamara() fallo:', detalle);
     $('gateErr').textContent='No se pudo abrir la cámara ('+detalle+'). Revisa permisos y reintenta.';
     if(!silencioso) toast('Cámara: '+detalle, 'error');
     return false;
@@ -1072,6 +1087,7 @@ async function confirmarConServidor(datos, resultadoLocal){
         qrUuid: datos.uuid || null,
         qrHash: datos.hash || null,
         ordenante: datos.ordenante || null,
+        motivos: (resultadoLocal.motivos||[]).join('; ').slice(0,500) || null,
       }),
     });
     const body=await resp.json().catch(()=>({}));
@@ -1512,7 +1528,7 @@ async function registrarEscaneo(r, d){
     fetch(NUVO_API+'/api/scans/log', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
-      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null, vendedor: vCode || null })
+      body: JSON.stringify({ veredicto: r.veredicto, monto: (d && Number(d.monto)>0) ? Number(d.monto) : null, vendedor: vCode || null, motivos: (r.motivos||[]).join('; ').slice(0,500) || null })
     }).catch(()=>{});
   }catch(e){}
 }
