@@ -32,16 +32,16 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
-/* El <video> ya NO se muestra -- sigue siendo la fuente real del stream
-   (drawImage lee su frame decodificado igual, sin importar el tamaño/
-   opacidad con que este pintado en pantalla) pero al no tener superficie
-   visible, Chrome/el WebView no tiene sobre que dibujar el triangulo de
-   play nativo ni ningun otro control: no hay control posible sobre un
-   elemento de 1x1px invisible. Lo que se ve es #camView, un canvas donde
-   dibujarLoop() redibuja ese mismo frame a pantalla completa. */
-#video{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
+/* Vuelve a mostrarse el <video> directo (object-fit:cover, gratis via el
+   compositor del navegador) en vez de redibujarlo a un canvas cada frame
+   en el hilo principal -- ese copiado no hacia falta si no hay overlays
+   dibujados encima, y sumaba costo real al pipeline. Puede volver a
+   aparecer el triangulo de play nativo del navegador sobre el video en
+   ciertos casos (WebView sin frames que pintar) -- es un problema
+   cosmetico conocido, aceptado por ahora: primero que la camara ande
+   fluida, despues se retoma. */
+#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover;pointer-events:none}
 #video::-webkit-media-controls{display:none!important}
-#camView{display:block;position:fixed;inset:0;z-index:0;background:#000}
 
 /* ---------- Reactivando la camara (al volver de segundo plano) ----------
    Android termina los MediaStreamTracks de la camara para liberar el
@@ -69,51 +69,13 @@ canvas{display:none}
 .live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.25}}
 
-/* Recuadro guia: borde neon animado (CSS puro, sin JS por frame) + linea
-   de barrido -- version estable, revertida despues de que el reticulo
-   reactivo (contorno siguiendo al QR real) resultara en coordenadas mal
-   escaladas (jsQR trabaja en el canvas de analisis reducido, el dibujo
-   iba a resolucion de pantalla con DPR sin convertir) y, aparte, en
-   dudas de fluidez por decodificar sin throttle. Vuelve a esto -- que
-   funcionaba y no colgaba nada -- hasta medir con numeros reales.
-   .frame vive encima de #camView porque .scan-ui (su contenedor) ya
-   tiene mas z-index (2) que #camView (0). */
-@property --angle{syntax:'<angle>';inherits:false;initial-value:0deg}
-
+/* Recuadro guia minimo: un marco estatico de referencia, sin animacion.
+   Se saco todo lo decorativo (borde neon animado, linea de barrido,
+   reticulo reactivo) mientras se resuelve la fluidez real de la camara --
+   sin eso no hay producto, y ningun adorno visual importa si la camara
+   no anda fluida primero. */
 .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1;
-  border-radius:26px}
-/* Halo: capa unica con blur, mas grande que el marco, pintada primero
-   (queda debajo del borde nitido de .frame::after). Mismo conic-gradient
-   y misma animacion que el borde para que giren pegados. */
-.frame::before{content:"";position:absolute;inset:-8px;box-sizing:border-box;padding:11px;
-  border-radius:34px;
-  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite:exclude;
-  filter:blur(10px);opacity:.65;
-  animation:girar-neon 3s linear infinite}
-/* Borde neon nitido: mismo truco de doble mascara, sin blur, recorriendo
-   el perimetro con un conic-gradient que gira via --angle. */
-.frame::after{content:"";position:absolute;inset:0;box-sizing:border-box;padding:3px;
-  border-radius:26px;
-  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite:exclude;
-  animation:girar-neon 3s linear infinite}
-@keyframes girar-neon{to{--angle:360deg}}
-/* La linea se mueve con transform (no con "top") para que la anime el
-   compositor, no el hilo principal. El wrapper .laser-track ocupa todo
-   el marco (inset:0) para que el porcentaje de translateY se calcule
-   sobre la altura del marco, no la de la linea. */
-.laser-track{position:absolute;inset:0;animation:sweep 2.4s cubic-bezier(.45,0,.55,1) infinite;will-change:transform}
-@keyframes sweep{0%{transform:translateY(-4%)}50%{transform:translateY(92%)}100%{transform:translateY(-4%)}}
-.laser{position:absolute;left:4%;right:4%;top:0;height:52px;border-radius:8px;
-  background:linear-gradient(180deg,transparent,rgba(255,199,0,.08) 30%,rgba(255,199,0,.6) 50%,rgba(255,199,0,.08) 70%,transparent);
-  filter:blur(.5px)}
+  border-radius:26px;border:2px solid rgba(255,255,255,.55)}
 
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
@@ -232,7 +194,7 @@ canvas{display:none}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .result.dup .again{background:var(--amber);color:#2A1704}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.frame::after,.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
+@media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -329,7 +291,6 @@ canvas{display:none}
 </head>
 <body>
 <video id="video" muted playsinline autoplay></video>
-<canvas id="camView"></canvas>
 <canvas id="canvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
@@ -342,7 +303,7 @@ canvas{display:none}
       <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
     </div>
   </div>
-  <div class="frame"><div class="laser-track"><div class="laser"></div></div></div>
+  <div class="frame"></div>
   <div class="side-controls">
     <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
@@ -737,35 +698,14 @@ let ocupado=false, escaneando=false, noHallaDesde=0, stream=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
-// ---------- Visor de camara: #video oculto, se ve #camView ----------
-// #video ya no se ve (1x1px, opacity 0): sigue siendo la fuente real del
-// stream, pero drawImage() lee su frame decodificado sin importar el
-// tamaño/opacidad con que este pintado -- por eso Chrome no tiene sobre
-// que superficie dibujar el triangulo de play nativo nunca mas. Lo que se
-// ve es #camView: su propio loop de dibujo (dibujarLoop, mas abajo)
-// redibuja ahi el frame con un cover-fit calculado a mano.
-const camView=$('camView'), camCtx=camView.getContext('2d');
-function ajustarCamView(){
-  const dpr=window.devicePixelRatio||1;
-  camView.width=Math.round(innerWidth*dpr); camView.height=Math.round(innerHeight*dpr);
-  camView.style.width=innerWidth+'px'; camView.style.height=innerHeight+'px';
-  camCtx.setTransform(dpr,0,0,dpr,0,0);
-}
-ajustarCamView();
-addEventListener('resize', ajustarCamView);
-addEventListener('orientationchange', ajustarCamView);
-
-// Cover-fit manual (equivalente a object-fit:cover, pero calculado a mano
-// porque #video ya no es lo que se ve): llena innerWidth x innerHeight
-// recortando lo que sobra del video nativo, sin deformarlo.
-function calcularCoverFit(vw, vh, sw, sh){
-  const escala=Math.max(sw/vw, sh/vh);
-  const dw=vw*escala, dh=vh*escala;
-  return { escala, dw, dh, dx:(sw-dw)/2, dy:(sh-dh)/2 };
-}
+// ---------- Visor de camara: #video directo, sin canvas de por medio ----------
+// Volvio a mostrarse #video tal cual (object-fit:cover via CSS, gratis en
+// el compositor del navegador) -- copiar cada frame a un canvas en el
+// hilo principal solo tenia sentido si se dibujaba algo encima, y ya no
+// se dibuja nada encima.
 
 // ---------- Decodificado fuera del hilo principal ----------
-// La falta de fluidez no era el overlay -- era jsQR corriendo en el hilo
+// La falta de fluidez no era (solo) el overlay -- era jsQR corriendo en el hilo
 // principal cada frame, bloqueando dibujo y animaciones mientras tarda.
 // Tres partes a la solucion:
 //  1) BarcodeDetector nativo del sistema cuando existe: corre fuera del
@@ -850,20 +790,21 @@ async function decodificarQRRecortado(vw, vh){
   return decodificarConWorkerImg(img);
 }
 
-// ---------- Medicion real: fps de dibujo + ms promedio de decodificado ----------
-// Los dos numeros que hacen falta para saber, con datos, si el
-// decodificado sigue siendo el cuello de botella.
-let dibujoFramesSeg=0, decodeMsSuma=0, decodeMsCuenta=0, ultimoReporteSeg=0;
-function registrarTiempoDecodificado(ms){ decodeMsSuma+=ms; decodeMsCuenta++; }
-function medirYReportar(ahora){
-  dibujoFramesSeg++;
+// ---------- Medicion real: los tres numeros que hacen falta ----------
+// Sin esto no se sabe si mejoro. Se reportan juntos, una vez por segundo,
+// contados desde cada intento de decodificado que efectivamente termina
+// (exitoso o no) via registrarTiempoDecodificado().
+let decodesEsteSegundo=0, decodeMsSuma=0, ultimoReporteSeg=0;
+function registrarTiempoDecodificado(ms){
+  decodesEsteSegundo++;
+  decodeMsSuma+=ms;
+  const ahora=performance.now();
   if(!ultimoReporteSeg) ultimoReporteSeg=ahora;
   if(ahora-ultimoReporteSeg>=1000){
-    const promedioDecode=decodeMsCuenta ? (decodeMsSuma/decodeMsCuenta).toFixed(1) : null;
-    console.log('[medicion] dibujo: '+dibujoFramesSeg+' fps | decodificado: '+
-      (promedioDecode!=null ? promedioDecode+'ms promedio ('+decodeMsCuenta+' intentos)' : 'sin intentos')+
-      ' en el ultimo segundo');
-    dibujoFramesSeg=0; decodeMsSuma=0; decodeMsCuenta=0; ultimoReporteSeg=ahora;
+    const promedio=decodesEsteSegundo ? (decodeMsSuma/decodesEsteSegundo).toFixed(1) : '0';
+    console.log('[medicion] detector: '+(barcodeDetector?'BarcodeDetector nativo':'jsQR en Worker')+
+      ' | decodificados: '+decodesEsteSegundo+'/seg | '+promedio+'ms promedio');
+    decodesEsteSegundo=0; decodeMsSuma=0; ultimoReporteSeg=ahora;
   }
 }
 
@@ -966,7 +907,10 @@ async function iniciarCamara(silencioso){
     // ser tan extremo como para volver a saturar el celular.
     stream=await navigator.mediaDevices.getUserMedia({video:{
       facingMode:'environment',
-      width:{ideal:1920}, height:{ideal:1920},
+      // 1280x720, no 1920x1920: mas resolucion no lee mejor el QR y le
+      // suma trabajo a todo el pipeline (drawImage del recorte digital,
+      // downscale para jsQR) para nada.
+      width:{ideal:1280}, height:{ideal:720},
       focusMode:'continuous'
     }, audio:false});
     // LOG TEMPORAL DE DIAGNOSTICO -- boton de play nativo que sigue
@@ -987,7 +931,6 @@ async function iniciarCamara(silencioso){
     }
     detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
-    requestAnimationFrame(dibujarLoop);
     requestAnimationFrame(cicloDecodificado);
     return true;
   }catch(e){
@@ -1067,36 +1010,11 @@ function detenerCamara(){
   video.srcObject=null;
 }
 
-// Bucle rapido principal. Decodificar cada frame a la resolucion nativa de
-// la camara (hasta 1920x1920) ya no es un problema: el decodificado corre
-// aparte (BarcodeDetector nativo o jsQR en un Web Worker, ver mas arriba),
-// asi que este loop de dibujo nunca espera a nada. Ver cicloDecodificado()
-// mas abajo para el otro loop, el del analisis.
-function dibujarLoop(){
-  if(!escaneando) return;
-  const ahora=performance.now();
-  if(video.readyState===video.HAVE_ENOUGH_DATA){
-    // Mismo frame que ya esta decodificado en memoria: se dibuja a pantalla
-    // completa (cover-fit manual, sin deformar) para que #video invisible
-    // nunca sea lo que el operario ve. Envuelto en try/catch para que un
-    // fallo de dibujo (el que ya paso una vez con el reticulo reactivo)
-    // nunca pueda tumbar el loop de camara.
-    try{
-      const vw=video.videoWidth, vh=video.videoHeight;
-      const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
-      camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
-    }catch(e){
-      console.error('[camView] Error dibujando el frame de camara, se ignora este frame:', e);
-    }
-  }
-  medirYReportar(ahora);
-  requestAnimationFrame(dibujarLoop);
-}
-
-// Ciclo de decodificado: su propio requestAnimationFrame, separado del
-// dibujo. Un acumulador de tiempo limita los intentos reales a 10 por
-// segundo como maximo (DECODE_INTERVALO_MS); si el intento anterior
-// todavia no termino, este turno se saltea en vez de encolar otro.
+// Ciclo de decodificado: el video se pinta solo (CSS, gratis), asi que
+// este es el unico loop de JS que hace falta. Un acumulador de tiempo
+// limita los intentos reales a 10 por segundo como maximo
+// (DECODE_INTERVALO_MS); si el intento anterior todavia no termino, este
+// turno se saltea en vez de encolar otro.
 const DECODE_INTERVALO_MS=100;
 let ultimoIntentoDecode=0, decodificando=false;
 function cicloDecodificado(){
@@ -1213,9 +1131,9 @@ async function onScan(texto, fotoOverride){
   // independiente de si despues resulta aceptado o rechazado (ese resultado
   // tiene su propio patron de vibracion mas abajo, en mostrar()).
   try{ if(navigator.vibrate) navigator.vibrate(10); }catch(e){}
-  // La camara NO se apaga: sigue viva y en pantalla mientras se valida
-  // (dibujarLoop() sigue dibujando el video; solo cicloDecodificado() se
-  // pausa porque revisa "ocupado", no porque se corte el stream). Asi no
+  // La camara NO se apaga: sigue viva y en pantalla mientras se valida (el
+  // video se pinta solo, CSS; solo cicloDecodificado() se pausa porque
+  // revisa "ocupado", no porque se corte el stream). Asi no
   // hay corte a negro ni congelamiento -- la
   // camara se ve corriendo hasta el instante en que aparece el resultado
   // (que sí tapa todo con su propio fondo). Solo se frena el intento de
