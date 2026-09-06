@@ -333,28 +333,50 @@ function scan(matrix) {
     if (!locations) {
         return null;
     }
+    // PARCHE NUVO: antes, si ningun candidato lograba decodificar, scan()
+    // descartaba locations por completo y devolvia null -- sin distincion
+    // entre "no hay nada" y "hay un QR ahi pero no se pudo leer todavia"
+    // (perspectiva mala, QR a medio encuadrar, blur). Se guarda la
+    // geometria del primer candidato localizado (bestLocation) para que el
+    // llamador pueda dibujar un contorno siguiendo al QR real mientras
+    // busca, no solo cuando ya decodifico -- exactamente lo que jsQR ya
+    // calcula en cada intento via extracted.mappingFunction, solo que se
+    // tiraba si "decoded" fallaba.
+    var bestLocation = null;
     for (var _i = 0, locations_1 = locations; _i < locations_1.length; _i++) {
         var location_1 = locations_1[_i];
         var extracted = extractor_1.extract(matrix, location_1);
         var decoded = decoder_1.decode(extracted.matrix);
+        var loc = {
+            topRightCorner: extracted.mappingFunction(location_1.dimension, 0),
+            topLeftCorner: extracted.mappingFunction(0, 0),
+            bottomRightCorner: extracted.mappingFunction(location_1.dimension, location_1.dimension),
+            bottomLeftCorner: extracted.mappingFunction(0, location_1.dimension),
+            topRightFinderPattern: location_1.topRight,
+            topLeftFinderPattern: location_1.topLeft,
+            bottomLeftFinderPattern: location_1.bottomLeft,
+            bottomRightAlignmentPattern: location_1.alignmentPattern,
+        };
         if (decoded) {
             return {
                 binaryData: decoded.bytes,
                 data: decoded.text,
                 chunks: decoded.chunks,
                 version: decoded.version,
-                location: {
-                    topRightCorner: extracted.mappingFunction(location_1.dimension, 0),
-                    topLeftCorner: extracted.mappingFunction(0, 0),
-                    bottomRightCorner: extracted.mappingFunction(location_1.dimension, location_1.dimension),
-                    bottomLeftCorner: extracted.mappingFunction(0, location_1.dimension),
-                    topRightFinderPattern: location_1.topRight,
-                    topLeftFinderPattern: location_1.topLeft,
-                    bottomLeftFinderPattern: location_1.bottomLeft,
-                    bottomRightAlignmentPattern: location_1.alignmentPattern,
-                },
+                location: loc,
             };
         }
+        if (!bestLocation) {
+            bestLocation = loc;
+        }
+    }
+    // Ningun candidato decodifico, pero se localizo al menos un grupo de
+    // finder patterns: se devuelve solo la geometria (data:null). Todo el
+    // codigo que ya llama a jsQR() sigue funcionando igual porque siempre
+    // chequea "r.data" (nunca solo "r") antes de tratar esto como un
+    // escaneo exitoso.
+    if (bestLocation) {
+        return { data: null, location: bestLocation };
     }
     return null;
 }

@@ -97,17 +97,33 @@ canvas{display:none}
   mask-composite:exclude;
   animation:girar-neon 3s linear infinite}
 @keyframes girar-neon{to{--angle:360deg}}
-/* La linea se mueve con transform (no con "top") para que la anime el
-   compositor, no el hilo principal -- por eso ya no se traba ni se ve
-   inconsistente aunque el hilo principal este ocupado decodificando. El
-   wrapper .laser-track ocupa todo el marco (inset:0) para que el
-   porcentaje de translateY se calcule sobre la altura del marco, no la de
-   la linea. */
-.laser-track{position:absolute;inset:0;animation:sweep 2.4s cubic-bezier(.45,0,.55,1) infinite;will-change:transform}
-@keyframes sweep{0%{transform:translateY(-4%)}50%{transform:translateY(92%)}100%{transform:translateY(-4%)}}
-.laser{position:absolute;left:4%;right:4%;top:0;height:52px;border-radius:8px;
-  background:linear-gradient(180deg,transparent,rgba(255,199,0,.08) 30%,rgba(255,199,0,.6) 50%,rgba(255,199,0,.08) 70%,transparent);
-  filter:blur(.5px)}
+/* Ya no hay linea de barrido: el feedback real de "estoy buscando" es que
+   el marco respira (solo transform+opacity, GPU) mientras nada real fue
+   detectado todavia. En cuanto #qrOverlay empieza a trackear un QR real
+   (clase .qr-trackeando en #scanUi), el marco se queda quieto y atenuado
+   para no competir visualmente con el contorno que sigue al QR de verdad. */
+@keyframes respirar{0%,100%{transform:translate(-50%,-52%) scale(1);opacity:.85}
+  50%{transform:translate(-50%,-52%) scale(1.035);opacity:1}}
+.frame{animation:respirar 2.6s ease-in-out infinite}
+.qr-trackeando .frame{animation-play-state:paused;opacity:.4}
+
+/* ---------- Seguimiento visual del QR real ----------
+   #qrOverlay es un canvas 2D de pantalla completa (no WebGL) donde se
+   dibuja, cada frame, el contorno de las esquinas que jsQR localizo de
+   verdad (jsQR.location llega incluso cuando encontro los patrones
+   "finder" pero todavia no pudo decodificar el contenido) -- ver
+   marcarDeteccionQR()/dibujarTrackQR() en el script. Es la diferencia
+   entre decoracion y feedback: el contorno persigue el QR real, no un
+   marco fijo. */
+#qrOverlay{display:block;position:fixed;inset:0;z-index:3;pointer-events:none}
+/* Pulso de exito al decodificar: unico elemento animado con CSS puro
+   (transform+opacity) de este grupo -- el contorno en si (que SI necesita
+   la geometria real del QR) lo anima dibujarTrackQR() por canvas. */
+#qrPulso{position:fixed;top:0;left:0;width:64px;height:64px;margin:-32px 0 0 -32px;
+  border-radius:50%;pointer-events:none;z-index:4;opacity:0;
+  background:radial-gradient(circle, var(--nuvo-violeta-claro), var(--violeta) 55%, transparent 72%)}
+#qrPulso.on{animation:pulso-exito .5s cubic-bezier(.2,.9,.3,1)}
+@keyframes pulso-exito{0%{opacity:0;transform:scale(.3)}35%{opacity:.9;transform:scale(1.15)}100%{opacity:0;transform:scale(1.9)}}
 
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
@@ -226,7 +242,7 @@ canvas{display:none}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .result.dup .again{background:var(--amber);color:#2A1704}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.frame::after,.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
+@media (prefers-reduced-motion:reduce){.frame,.frame::before,.frame::after,#qrPulso.on,.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -324,6 +340,8 @@ canvas{display:none}
 <body>
 <video id="video" muted playsinline autoplay></video>
 <canvas id="canvas"></canvas>
+<canvas id="qrOverlay"></canvas>
+<div id="qrPulso"></div>
 
 <div class="scan-ui" id="scanUi">
   <div class="topbar">
@@ -335,7 +353,7 @@ canvas{display:none}
       <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
     </div>
   </div>
-  <div class="frame"><div class="laser-track"><div class="laser"></div></div></div>
+  <div class="frame"></div>
   <div class="side-controls">
     <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
@@ -730,6 +748,127 @@ let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
+// ---------- Seguimiento visual del QR real (no decorativo) ----------
+// jsQR devuelve r.location (las 4 esquinas del QR que localizo) tanto si
+// logro decodificar como si encontro los "finder patterns" pero todavia
+// no pudo leer el contenido (ver el parche en vendor/jsQR.js) -- eso es
+// lo que permite que el contorno persiga al QR real mientras se mueve,
+// no solo cuando ya se confirmo la lectura. Todo el dibujo es canvas 2D
+// (path + stroke), nunca WebGL; lo unico animado con CSS puro
+// (transform/opacity) es el pulso de exito en #qrPulso.
+const qrOv=$('qrOverlay'), qrOvCtx=qrOv.getContext('2d');
+const REDUCIR_MOVIMIENTO=matchMedia('(prefers-reduced-motion:reduce)').matches;
+function ajustarOverlayQR(){
+  const dpr=window.devicePixelRatio||1;
+  qrOv.width=Math.round(innerWidth*dpr); qrOv.height=Math.round(innerHeight*dpr);
+  qrOv.style.width=innerWidth+'px'; qrOv.style.height=innerHeight+'px';
+  qrOvCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+ajustarOverlayQR();
+addEventListener('resize', ajustarOverlayQR);
+addEventListener('orientationchange', ajustarOverlayQR);
+
+const qrTrack={ activo:false, actual:null, destino:null, ultimaDeteccion:0, colapso:null };
+const QR_GRACIA_MS=220, QR_SUAVIZADO=18, QR_COLAPSO_MS=340;
+
+// Traduce un punto que jsQR ubico en el canvas de analisis (reducido por
+// "escala" respecto del video nativo) a coordenadas de pantalla reales,
+// deshaciendo primero el downscale y despues aplicando la misma cuenta
+// que hace #video con object-fit:cover (el video llena toda la pantalla
+// recortando lo que sobra, no lo "encoge" completo).
+function mapPuntoAPantalla(p, escala, vw, vh, recorteX, recorteY){
+  // recorteX/Y: offset en pixeles nativos de video cuando el canvas de
+  // analisis es un recorte (como el zoom digital central), no el frame
+  // completo reducido -- por defecto 0 (caso normal de tick()).
+  const vx=p.x/escala+(recorteX||0), vy=p.y/escala+(recorteY||0);
+  const sw=innerWidth, sh=innerHeight;
+  const cubrir=Math.max(sw/vw, sh/vh);
+  const offX=(sw-vw*cubrir)/2, offY=(sh-vh*cubrir)/2;
+  return { x:vx*cubrir+offX, y:vy*cubrir+offY };
+}
+function centroDeCorners(c){
+  return { x:(c.tl.x+c.tr.x+c.br.x+c.bl.x)/4, y:(c.tl.y+c.tr.y+c.br.y+c.bl.y)/4 };
+}
+function lerpCorners(a, b, t){
+  const L=(p,q)=>({x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t});
+  return { tl:L(a.tl,b.tl), tr:L(a.tr,b.tr), br:L(a.br,b.br), bl:L(a.bl,b.bl) };
+}
+
+function marcarDeteccionQR(esquinas, exitoso){
+  qrTrack.destino=esquinas;
+  qrTrack.ultimaDeteccion=performance.now();
+  if(!qrTrack.activo){
+    qrTrack.activo=true;
+    qrTrack.actual=esquinas; // aparece ya en su lugar real, sin saltar desde otro lado
+    $('scanUi').classList.add('qr-trackeando');
+  }
+  if(exitoso && !qrTrack.colapso){
+    const centro=centroDeCorners(esquinas);
+    qrTrack.colapso={ inicio:performance.now(), centro };
+    const pulso=$('qrPulso');
+    pulso.style.left=centro.x+'px'; pulso.style.top=centro.y+'px';
+    pulso.classList.remove('on'); void pulso.offsetWidth; pulso.classList.add('on');
+  }
+}
+function marcarPerdidaQR(){
+  if(qrTrack.activo && !qrTrack.colapso && performance.now()-qrTrack.ultimaDeteccion>QR_GRACIA_MS){
+    qrTrack.activo=false; qrTrack.destino=null;
+    $('scanUi').classList.remove('qr-trackeando');
+  }
+}
+
+function dibujarContornoQR(c, alpha){
+  qrOvCtx.save();
+  qrOvCtx.globalAlpha=Math.max(0,alpha);
+  qrOvCtx.strokeStyle='#8B6BFF';
+  qrOvCtx.lineWidth=4;
+  qrOvCtx.lineJoin='round';
+  qrOvCtx.shadowColor='rgba(108,58,237,.65)';
+  qrOvCtx.shadowBlur=14;
+  qrOvCtx.beginPath();
+  qrOvCtx.moveTo(c.tl.x,c.tl.y);
+  qrOvCtx.lineTo(c.tr.x,c.tr.y);
+  qrOvCtx.lineTo(c.br.x,c.br.y);
+  qrOvCtx.lineTo(c.bl.x,c.bl.y);
+  qrOvCtx.closePath();
+  qrOvCtx.stroke();
+  qrOvCtx.restore();
+}
+
+let ultimoFrameTrackQR=0;
+function dibujarTrackQR(){
+  const ahora=performance.now();
+  const dt=ultimoFrameTrackQR ? Math.min(64,ahora-ultimoFrameTrackQR) : 16;
+  ultimoFrameTrackQR=ahora;
+  qrOvCtx.clearRect(0,0,innerWidth,innerHeight);
+
+  if(qrTrack.colapso){
+    const t=REDUCIR_MOVIMIENTO ? 1 : Math.min(1,(ahora-qrTrack.colapso.inicio)/QR_COLAPSO_MS);
+    const ease=1-Math.pow(1-t,3);
+    const centro=qrTrack.colapso.centro;
+    const objetivo={ tl:centro, tr:centro, br:centro, bl:centro };
+    const c=lerpCorners(qrTrack.actual||objetivo, objetivo, ease);
+    if(!REDUCIR_MOVIMIENTO) dibujarContornoQR(c, 1-ease*0.35);
+    if(t>=1){
+      qrTrack.colapso=null; qrTrack.activo=false; qrTrack.actual=null; qrTrack.destino=null;
+      $('scanUi').classList.remove('qr-trackeando');
+    }
+    return;
+  }
+
+  if(qrTrack.destino && qrTrack.actual){
+    if(REDUCIR_MOVIMIENTO){
+      qrTrack.actual=qrTrack.destino; // sin animacion de persecucion: salta directo
+    }else{
+      const factor=1-Math.exp(-QR_SUAVIZADO*dt/1000);
+      qrTrack.actual=lerpCorners(qrTrack.actual, qrTrack.destino, factor);
+    }
+  }
+  if(qrTrack.activo && qrTrack.actual){
+    dibujarContornoQR(qrTrack.actual, 1);
+  }
+}
+
 $('btnStart').addEventListener('click', activar);
 $('btnAgain').addEventListener('click', reanudar);
 $('btnCuenta').addEventListener('click', abrirCuenta);
@@ -938,6 +1077,7 @@ function detenerCamara(){
 const ANALISIS_MAX=720;
 function tick(){
   if(!escaneando) return;
+  dibujarTrackQR();
   if(video.readyState===video.HAVE_ENOUGH_DATA && !ocupado){
     const vw=video.videoWidth, vh=video.videoHeight;
     const s=Math.min(1, ANALISIS_MAX/Math.max(vw,vh));
@@ -945,6 +1085,16 @@ function tick(){
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const img=ctx.getImageData(0,0,canvas.width,canvas.height);
     const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+    if(r && r.location){
+      marcarDeteccionQR({
+        tl:mapPuntoAPantalla(r.location.topLeftCorner,s,vw,vh),
+        tr:mapPuntoAPantalla(r.location.topRightCorner,s,vw,vh),
+        br:mapPuntoAPantalla(r.location.bottomRightCorner,s,vw,vh),
+        bl:mapPuntoAPantalla(r.location.bottomLeftCorner,s,vw,vh),
+      }, !!r.data);
+    }else{
+      marcarPerdidaQR();
+    }
     if(r && r.data){
       onScan(r.data);
     }else{
@@ -1023,6 +1173,14 @@ function intentoConZoom(){
   zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
   const img=zoomCtx.getImageData(0,0,lado,lado);
   const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+  if(r && r.location){
+    marcarDeteccionQR({
+      tl:mapPuntoAPantalla(r.location.topLeftCorner,1,vw,vh,sx,sy),
+      tr:mapPuntoAPantalla(r.location.topRightCorner,1,vw,vh,sx,sy),
+      br:mapPuntoAPantalla(r.location.bottomRightCorner,1,vw,vh,sx,sy),
+      bl:mapPuntoAPantalla(r.location.bottomLeftCorner,1,vw,vh,sx,sy),
+    }, !!r.data);
+  }
   if(r && r.data) onScan(r.data);
 }
 function detenerZoom(){
