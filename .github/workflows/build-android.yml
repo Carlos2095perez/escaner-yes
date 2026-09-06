@@ -18,6 +18,19 @@ on:
 permissions:
   contents: write
 
+# El paso de "Publicar como Release" reescribe el mismo tag (nuvo-android-test)
+# a la fuerza y crea el Release de nuevo -- si dos runs de este workflow para
+# el mismo commit corren al mismo tiempo (por ejemplo el push automatico y un
+# workflow_dispatch manual disparados casi juntos), los dos intentan mover el
+# mismo ref de git a la vez y uno de los dos falla con "cannot lock ref" (le
+# paso exactamente esto al run #41). Con este grupo de concurrencia, un
+# segundo run para el mismo branch espera a que el primero termine del todo
+# en vez de pisarlo -- no hace falta cancel-in-progress porque siempre
+# preferimos dejar que el build que ya esta compilando el APK firmado termine.
+concurrency:
+  group: build-android-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
