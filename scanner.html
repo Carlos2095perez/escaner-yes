@@ -38,7 +38,7 @@ canvas{display:none}
    visible, Chrome/el WebView no tiene sobre que dibujar el triangulo de
    play nativo ni ningun otro control: no hay control posible sobre un
    elemento de 1x1px invisible. Lo que se ve es #camView, un canvas donde
-   se redibuja ese mismo frame a pantalla completa cada tick(). */
+   dibujarLoop() redibuja ese mismo frame a pantalla completa. */
 #video{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
 #video::-webkit-media-controls{display:none!important}
 #camView{display:block;position:fixed;inset:0;z-index:0;background:#000}
@@ -733,7 +733,7 @@ const hayTTS = typeof speechSynthesis!=='undefined';
 function cargarVoces(){ if(hayTTS) voces=speechSynthesis.getVoices(); }
 if(hayTTS){ cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces; }
 
-let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null;
+let ocupado=false, escaneando=false, noHallaDesde=0, stream=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
@@ -741,19 +741,9 @@ const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext
 // #video ya no se ve (1x1px, opacity 0): sigue siendo la fuente real del
 // stream, pero drawImage() lee su frame decodificado sin importar el
 // tamaño/opacidad con que este pintado -- por eso Chrome no tiene sobre
-// que superficie dibujar el triangulo de play nativo nunca mas (esto SI
-// se mantiene: resolvio ese bug). Lo que se ve es #camView: cada tick()
-// redibuja ahi el mismo frame que ya se capturo para el analisis
-// (drawImage no tiene costo extra, es la misma imagen decodificada en
-// memoria) con un cover-fit calculado a mano. El reticulo reactivo que
-// se dibujaba encima (cuadrilatero siguiendo al QR real) se revirtio:
-// las coordenadas de jsQR.location venian del canvas de analisis
-// reducido y se estaban pintando sin convertir a la escala de pantalla
-// (con DPR), lo que daba un cuadrilatero chico y torcido -- y aparte
-// habia dudas reales de fluidez. Vuelve el recuadro guia de siempre
-// (borde neon + linea de barrido, ambos CSS/HTML puros en .frame, ver
-// el <style> y el markup de .scan-ui) hasta medir con numeros si el
-// costo real es el decodificado de jsQR sin throttle.
+// que superficie dibujar el triangulo de play nativo nunca mas. Lo que se
+// ve es #camView: su propio loop de dibujo (dibujarLoop, mas abajo)
+// redibuja ahi el frame con un cover-fit calculado a mano.
 const camView=$('camView'), camCtx=camView.getContext('2d');
 function ajustarCamView(){
   const dpr=window.devicePixelRatio||1;
@@ -774,19 +764,106 @@ function calcularCoverFit(vw, vh, sw, sh){
   return { escala, dw, dh, dx:(sw-dw)/2, dy:(sh-dh)/2 };
 }
 
-// ---------- Medicion real de fluidez ----------
-// Cuenta cuantas vueltas del loop de tick() se procesan por segundo real
-// (no un estimado) e imprime el numero en consola cada segundo, para
-// saber con datos -- no a ojo -- si el problema es el overlay o jsQR
-// decodificando sin throttle en cada frame.
-let framesEsteSegundo=0, inicioSegundoFps=0;
-function medirFps(ahora){
-  if(!inicioSegundoFps) inicioSegundoFps=ahora;
-  framesEsteSegundo++;
-  if(ahora-inicioSegundoFps>=1000){
-    console.log('[fps] tick() proceso '+framesEsteSegundo+' frames en el ultimo segundo');
-    framesEsteSegundo=0;
-    inicioSegundoFps=ahora;
+// ---------- Decodificado fuera del hilo principal ----------
+// La falta de fluidez no era el overlay -- era jsQR corriendo en el hilo
+// principal cada frame, bloqueando dibujo y animaciones mientras tarda.
+// Tres partes a la solucion:
+//  1) BarcodeDetector nativo del sistema cuando existe: corre fuera del
+//     hilo de JS y es muchisimo mas rapido que jsQR.
+//  2) Si no existe, jsQR se mueve a un Web Worker (vendor/qr-worker.js):
+//     el hilo principal solo manda una imagen reducida a ~400px y espera
+//     el resultado por mensaje, sin bloquearse nunca.
+//  3) Sin importar cual de los dos motores este activo: el decodificado
+//     corre como maximo 10 veces por segundo, nunca dos intentos a la
+//     vez (si el anterior no termino, se saltea el turno), y en su
+//     propio ciclo -- separado por completo del dibujo de camara.
+let barcodeDetector=null;
+if('BarcodeDetector' in window){
+  try{ barcodeDetector=new BarcodeDetector({ formats:['qr_code'] }); }
+  catch(e){ barcodeDetector=null; console.log('[decode] BarcodeDetector no soporta qr_code, se usa jsQR en worker:', e && e.message); }
+}
+console.log('[decode] Motor de decodificado:', barcodeDetector ? 'BarcodeDetector nativo' : 'jsQR en Web Worker');
+
+let qrWorker=null, workerResolveActual=null;
+function obtenerWorkerQR(){
+  if(!qrWorker){
+    qrWorker=new Worker('vendor/qr-worker.js');
+    qrWorker.onmessage=(e)=>{
+      if(workerResolveActual){ const resolver=workerResolveActual; workerResolveActual=null; resolver(e.data && e.data.texto || null); }
+    };
+    qrWorker.onerror=(e)=>{
+      console.error('[decode] Error en el worker de jsQR:', e.message);
+      if(workerResolveActual){ const resolver=workerResolveActual; workerResolveActual=null; resolver(null); }
+    };
+  }
+  return qrWorker;
+}
+function decodificarConWorkerImg(img){
+  return new Promise((resolve)=>{
+    try{
+      const w=obtenerWorkerQR();
+      workerResolveActual=resolve;
+      w.postMessage({ data:img.data, width:img.width, height:img.height }, [img.data.buffer]);
+    }catch(e){
+      workerResolveActual=null;
+      resolve(null);
+    }
+  });
+}
+const ANCHO_WORKER=400; // decodificar chico y rapido, no a resolucion completa
+function decodificarFrameConWorker(fuenteVideo, vw, vh){
+  const s=Math.min(1, ANCHO_WORKER/Math.max(vw,vh));
+  canvas.width=Math.round(vw*s); canvas.height=Math.round(vh*s);
+  ctx.drawImage(fuenteVideo,0,0,canvas.width,canvas.height);
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  return decodificarConWorkerImg(img);
+}
+// Decodifica el frame completo (video en vivo) con el motor que haya.
+async function decodificarQR(fuenteVideo, vw, vh){
+  if(barcodeDetector){
+    try{
+      const codigos=await barcodeDetector.detect(fuenteVideo);
+      return (codigos && codigos.length) ? codigos[0].rawValue : null;
+    }catch(e){
+      console.error('[decode] BarcodeDetector fallo en este turno:', e);
+      return null;
+    }
+  }
+  return decodificarFrameConWorker(fuenteVideo, vw, vh);
+}
+// Recorte central a resolucion nativa (zoom digital): QR chico o con logo
+// grande (como el de DeUna) a veces lo necesita. Se prueba DENTRO del
+// mismo turno de decodificado, nunca en paralelo ni en un timer aparte,
+// despues de 1.5s sin encontrar nada.
+async function decodificarQRRecortado(vw, vh){
+  const lado=Math.round(Math.min(vw,vh)*0.55);
+  const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
+  zoomCanvas.width=lado; zoomCanvas.height=lado;
+  zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
+  if(barcodeDetector){
+    try{
+      const codigos=await barcodeDetector.detect(zoomCanvas);
+      return (codigos && codigos.length) ? codigos[0].rawValue : null;
+    }catch(e){ return null; }
+  }
+  const img=zoomCtx.getImageData(0,0,lado,lado);
+  return decodificarConWorkerImg(img);
+}
+
+// ---------- Medicion real: fps de dibujo + ms promedio de decodificado ----------
+// Los dos numeros que hacen falta para saber, con datos, si el
+// decodificado sigue siendo el cuello de botella.
+let dibujoFramesSeg=0, decodeMsSuma=0, decodeMsCuenta=0, ultimoReporteSeg=0;
+function registrarTiempoDecodificado(ms){ decodeMsSuma+=ms; decodeMsCuenta++; }
+function medirYReportar(ahora){
+  dibujoFramesSeg++;
+  if(!ultimoReporteSeg) ultimoReporteSeg=ahora;
+  if(ahora-ultimoReporteSeg>=1000){
+    const promedioDecode=decodeMsCuenta ? (decodeMsSuma/decodeMsCuenta).toFixed(1) : null;
+    console.log('[medicion] dibujo: '+dibujoFramesSeg+' fps | decodificado: '+
+      (promedioDecode!=null ? promedioDecode+'ms promedio ('+decodeMsCuenta+' intentos)' : 'sin intentos')+
+      ' en el ultimo segundo');
+    dibujoFramesSeg=0; decodeMsSuma=0; decodeMsCuenta=0; ultimoReporteSeg=ahora;
   }
 }
 
@@ -910,7 +987,8 @@ async function iniciarCamara(silencioso){
     }
     detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
-    requestAnimationFrame(tick);
+    requestAnimationFrame(dibujarLoop);
+    requestAnimationFrame(cicloDecodificado);
     return true;
   }catch(e){
     // El mensaje generico ("revisa permisos") no alcanza para diagnosticar --
@@ -990,65 +1068,79 @@ function detenerCamara(){
 }
 
 // Bucle rapido principal. Decodificar cada frame a la resolucion nativa de
-// la camara (hasta 1920x1920) es carisimo -- bloquea el hilo principal el
-// tiempo suficiente como para que TODA la animacion (la linea, los pulsos)
-// se vea trabada/inconsistente, sin importar que la animacion en si sea
-// fluida. jsQR lee perfecto un QR de comprobante a una resolucion mucho
-// menor, asi que se analiza reducido y el hilo principal queda libre.
-const ANALISIS_MAX=720;
-function tick(){
+// la camara (hasta 1920x1920) ya no es un problema: el decodificado corre
+// aparte (BarcodeDetector nativo o jsQR en un Web Worker, ver mas arriba),
+// asi que este loop de dibujo nunca espera a nada. Ver cicloDecodificado()
+// mas abajo para el otro loop, el del analisis.
+function dibujarLoop(){
   if(!escaneando) return;
   const ahora=performance.now();
-  medirFps(ahora);
-
   if(video.readyState===video.HAVE_ENOUGH_DATA){
-    const vw=video.videoWidth, vh=video.videoHeight;
     // Mismo frame que ya esta decodificado en memoria: se dibuja a pantalla
     // completa (cover-fit manual, sin deformar) para que #video invisible
-    // nunca sea lo que el operario ve. Esto es lo unico que queda del
-    // "overlay" -- envuelto en try/catch para que un fallo de dibujo (el
-    // que ya paso una vez con el reticulo reactivo) nunca pueda tumbar el
-    // loop real de camara + decodificado.
+    // nunca sea lo que el operario ve. Envuelto en try/catch para que un
+    // fallo de dibujo (el que ya paso una vez con el reticulo reactivo)
+    // nunca pueda tumbar el loop de camara.
     try{
+      const vw=video.videoWidth, vh=video.videoHeight;
       const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
       camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
     }catch(e){
       console.error('[camView] Error dibujando el frame de camara, se ignora este frame:', e);
     }
+  }
+  medirYReportar(ahora);
+  requestAnimationFrame(dibujarLoop);
+}
 
-    if(!ocupado){
-      const s=Math.min(1, ANALISIS_MAX/Math.max(vw,vh));
-      canvas.width=Math.round(vw*s); canvas.height=Math.round(vh*s);
-      ctx.drawImage(video,0,0,canvas.width,canvas.height);
-      const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-      const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-      if(r && r.data){
-        onScan(r.data);
+// Ciclo de decodificado: su propio requestAnimationFrame, separado del
+// dibujo. Un acumulador de tiempo limita los intentos reales a 10 por
+// segundo como maximo (DECODE_INTERVALO_MS); si el intento anterior
+// todavia no termino, este turno se saltea en vez de encolar otro.
+const DECODE_INTERVALO_MS=100;
+let ultimoIntentoDecode=0, decodificando=false;
+function cicloDecodificado(){
+  if(!escaneando) return;
+  const ahora=performance.now();
+  if(!ocupado && !decodificando && video.readyState===video.HAVE_ENOUGH_DATA && (ahora-ultimoIntentoDecode)>=DECODE_INTERVALO_MS){
+    ultimoIntentoDecode=ahora;
+    intentarDecodificar();
+  }
+  requestAnimationFrame(cicloDecodificado);
+}
+async function intentarDecodificar(){
+  decodificando=true;
+  const t0=performance.now();
+  try{
+    const vw=video.videoWidth, vh=video.videoHeight;
+    let texto=await decodificarQR(video, vw, vh);
+    if(!texto && noHallaDesde && (Date.now()-noHallaDesde)>1500){
+      texto=await decodificarQRRecortado(vw, vh);
+    }
+    if(texto){
+      onScan(texto);
+    }else{
+      const t=Date.now();
+      if(!noHallaDesde) noHallaDesde=t;
+      const tardando=t-noHallaDesde;
+      // Guia progresiva: primero pide acercar, despues sugiere causas comunes,
+      // y por ultimo ofrece el plan B (tomar foto) para no dejar al operario sin salida.
+      if(tardando>6000){
+        $('statusText').textContent='¿No lee? Evita reflejos y toca "Tomar foto"';
+        $('statusText').parentElement.classList.add('pill-warn');
+        $('btnFoto').classList.add('show');
+      }else if(tardando>2500){
+        $('statusText').textContent='Acércate y enfoca el QR…';
       }else{
-        const t=Date.now();
-        if(!noHallaDesde) noHallaDesde=t;
-        const tardando=t-noHallaDesde;
-        // Guia progresiva: primero pide acercar, despues sugiere causas comunes,
-        // y por ultimo ofrece el plan B (tomar foto) para no dejar al operario sin salida.
-        if(tardando>6000){
-          $('statusText').textContent='¿No lee? Evita reflejos y toca "Tomar foto"';
-          $('statusText').parentElement.classList.add('pill-warn');
-          $('btnFoto').classList.add('show');
-        }else if(tardando>2500){
-          $('statusText').textContent='Acércate y enfoca el QR…';
-        }else{
-          $('statusText').textContent='Buscando código…';
-        }
-        // Si lleva mas de 1.5s sin encontrar nada (QR chico o con logo grande,
-        // como el de DeUna), activa en paralelo un intento de "zoom" digital a
-        // ritmo bajo (no en cada frame), para no afectar el caso normal y rapido.
-        if(tardando>1500 && !zoomTimer){
-          zoomTimer=setInterval(intentoConZoom, 350);
-        }
+        $('statusText').textContent='Buscando código…';
       }
     }
+  }catch(e){
+    console.error('[decode] Error decodificando:', e);
+  }finally{
+    registrarTiempoDecodificado(performance.now()-t0);
+    decodificando=false;
   }
-  requestAnimationFrame(tick);
 }
 
 // Decodifica una foto tomada con la camara nativa (mas confiable que el video en
@@ -1091,20 +1183,10 @@ $('fileInput').addEventListener('change', e=>{
   img.src=URL.createObjectURL(file);
 });
 
-// Intento lento en paralelo: recorte central a resolucion nativa (zoom digital).
-function intentoConZoom(){
-  if(!escaneando || ocupado || video.readyState!==video.HAVE_ENOUGH_DATA) return;
-  const vw=video.videoWidth, vh=video.videoHeight;
-  const lado=Math.round(Math.min(vw,vh)*0.55);
-  const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
-  zoomCanvas.width=lado; zoomCanvas.height=lado;
-  zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
-  const img=zoomCtx.getImageData(0,0,lado,lado);
-  const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-  if(r && r.data) onScan(r.data);
-}
+// El recorte central (zoom digital) ya no tiene su propio timer -- ahora
+// es decodificarQRRecortado(), llamado DENTRO del mismo turno de
+// intentarDecodificar() cuando hace falta. Ver mas arriba.
 function detenerZoom(){
-  if(zoomTimer){ clearInterval(zoomTimer); zoomTimer=null; }
   $('btnFoto').classList.remove('show');
   $('statusText').parentElement.classList.remove('pill-warn');
 }
@@ -1131,9 +1213,10 @@ async function onScan(texto, fotoOverride){
   // independiente de si despues resulta aceptado o rechazado (ese resultado
   // tiene su propio patron de vibracion mas abajo, en mostrar()).
   try{ if(navigator.vibrate) navigator.vibrate(10); }catch(e){}
-  // La camara NO se apaga: sigue viva y en pantalla mientras se valida (el
-  // loop de tick() se pausa solo porque revisa "ocupado", no porque se
-  // corte el stream). Asi no hay corte a negro ni congelamiento -- la
+  // La camara NO se apaga: sigue viva y en pantalla mientras se valida
+  // (dibujarLoop() sigue dibujando el video; solo cicloDecodificado() se
+  // pausa porque revisa "ocupado", no porque se corte el stream). Asi no
+  // hay corte a negro ni congelamiento -- la
   // camara se ve corriendo hasta el instante en que aparece el resultado
   // (que sí tapa todo con su propio fondo). Solo se frena el intento de
   // zoom digital de fondo, que ya no tiene sentido si ya se encontro un QR.
@@ -1424,8 +1507,8 @@ function reanudar(){
   $('result').className='result'; ocupado=false; noHallaDesde=0;
   if(CONFIG.MODO_ESCANEO==='directo'){
     // La camara nunca se apago (sigue viva desde el escaneo anterior, ver
-    // onScan) -- alcanza con soltar "ocupado": el loop de tick(), que nunca
-    // se detuvo, retoma solo en el siguiente frame. No hay reinicio de
+    // onScan) -- alcanza con soltar "ocupado": cicloDecodificado(), que
+    // nunca se detuvo, retoma solo en el siguiente turno. No hay reinicio de
     // camara, no hay negociacion de permisos de nuevo: la app queda
     // escaneando de forma continua, sin cortes entre un comprobante y otro.
     return;
