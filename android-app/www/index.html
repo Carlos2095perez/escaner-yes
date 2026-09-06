@@ -23,6 +23,10 @@
   --green:#00D26A; --green-lo:#05231A; --green-hi:#5CF0A6;
   --red:#FF4152; --red-lo:#2A0E12; --white:#FFFFFF; --muted:#9AA1AA;
   --amber:#FF9F1C; --amber-lo:#2A1704; --amber-hi:#FFD180;
+  /* Mismo gradiente morado-azul del boton principal y del logo -- para
+     que el borde neon del marco de escaneo use la identidad de marca,
+     no un color de ejemplo. */
+  --nuvo-violeta-claro:#9B6BFF; --nuvo-azul:#3B82F6;
   --sora:'Poppins',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -62,19 +66,37 @@ canvas{display:none}
 .live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.25}}
 
+/* Registrada para que el navegador interpole el angulo en el compositor
+   (como transform u opacity), no recalculando el gradiente en el hilo
+   principal en cada frame -- por eso esto no compite con el decodificado
+   del QR. */
+@property --angle{syntax:'<angle>';inherits:false;initial-value:0deg}
+
 .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1;
   border-radius:26px}
-.frame::before{content:"";position:absolute;inset:-18px;border-radius:38px;
-  background:radial-gradient(circle, rgba(255,199,0,.20), transparent 70%);
-  animation:glow 2.4s ease-in-out infinite;will-change:opacity,transform}
-@keyframes glow{0%,100%{opacity:.45;transform:scale(.94)}50%{opacity:1;transform:scale(1.05)}}
-.frame i{position:absolute;width:34px;height:34px;border:3px solid var(--yellow);border-radius:10px;
-  animation:cornPulse 1.8s ease-in-out infinite;will-change:opacity,transform}
-@keyframes cornPulse{0%,100%{opacity:.6;transform:scale(.93)}50%{opacity:1;transform:scale(1);border-color:#fff}}
-.frame i:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;animation-delay:0s}
-.frame i:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;animation-delay:.15s}
-.frame i:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;animation-delay:.3s}
-.frame i:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;animation-delay:.45s}
+/* Halo: capa unica con blur, mas grande que el marco, pintada primero
+   (queda debajo del borde nitido de .frame::after). Mismo conic-gradient
+   y misma animacion que el borde para que giren pegados. */
+.frame::before{content:"";position:absolute;inset:-8px;box-sizing:border-box;padding:11px;
+  border-radius:34px;
+  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  filter:blur(10px);opacity:.65;
+  animation:girar-neon 3s linear infinite}
+/* Borde neon nitido: mismo truco de doble mascara, sin blur, recorriendo
+   el perimetro con un conic-gradient que gira via --angle. */
+.frame::after{content:"";position:absolute;inset:0;box-sizing:border-box;padding:3px;
+  border-radius:26px;
+  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  animation:girar-neon 3s linear infinite}
+@keyframes girar-neon{to{--angle:360deg}}
 /* La linea se mueve con transform (no con "top") para que la anime el
    compositor, no el hilo principal -- por eso ya no se traba ni se ve
    inconsistente aunque el hilo principal este ocupado decodificando. El
@@ -204,7 +226,7 @@ canvas{display:none}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .result.dup .again{background:var(--amber);color:#2A1704}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.rings b,.disc,.disc path,.frame i,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
+@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.frame::after,.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -313,7 +335,7 @@ canvas{display:none}
       <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
     </div>
   </div>
-  <div class="frame"><i></i><i></i><i></i><i></i><div class="laser-track"><div class="laser"></div></div></div>
+  <div class="frame"><div class="laser-track"><div class="laser"></div></div></div>
   <div class="side-controls">
     <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
