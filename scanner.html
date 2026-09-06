@@ -781,24 +781,31 @@ function trazarRectRedondeado(c, x, y, w, h, r){
 const qr={ estado:'reposo', actual:null, destino:null, ultimaDeteccion:0, colapsoInicio:0, colapsoCentro:null, dataPendiente:null };
 const QR_GRACIA_MS=220, QR_LERP=0.25, QR_COLAPSO_MS=200;
 
-function actualizarDeteccionQR(esquinas, data){
+function actualizarDeteccionQR(esquinas, data, ahora){
   if(qr.estado==='colapsando') return; // ya se confirmo un exito, ignora nuevas detecciones
+  ahora=ahora==null ? performance.now() : ahora;
   qr.destino=esquinas;
-  qr.ultimaDeteccion=performance.now();
+  qr.ultimaDeteccion=ahora;
   if(qr.estado!=='trackeando'){
     qr.estado='trackeando';
     qr.actual=esquinas; // aparece ya en su lugar real, sin saltar desde otro lado
   }
-  if(data) iniciarColapso(esquinas, data);
+  if(data) iniciarColapso(esquinas, data, ahora);
 }
 function perderDeteccionQR(){
   if(qr.estado==='trackeando' && performance.now()-qr.ultimaDeteccion>QR_GRACIA_MS){
     qr.estado='reposo'; qr.actual=null; qr.destino=null;
   }
 }
-function iniciarColapso(esquinas, data){
+function iniciarColapso(esquinas, data, ahora){
   qr.estado='colapsando';
-  qr.colapsoInicio=performance.now();
+  // Usa el mismo "ahora" que ya midio tick() para este frame en vez de
+  // pedir un performance.now() nuevo aca: ese segundo llamado siempre cae
+  // un poco DESPUES del "ahora" que tick() le va a pasar a dibujarReticulo()
+  // en este mismo ciclo, asi que colapsoInicio quedaba mas adelantado que
+  // el primer "ahora" con el que se lo compara -- eso es lo que producia
+  // el t (y por lo tanto el radio del pulso) negativo en el primer frame.
+  qr.colapsoInicio=ahora==null ? performance.now() : ahora;
   qr.colapsoCentro=centroDeCorners(esquinas);
   qr.actual=esquinas;
   qr.dataPendiente=data;
@@ -866,18 +873,30 @@ function dibujarPatrones(patrones){
   camCtx.restore();
 }
 function dibujarColapso(ahora){
-  const t=REDUCIR_MOVIMIENTO ? 1 : Math.min(1,(ahora-qr.colapsoInicio)/QR_COLAPSO_MS);
+  // t venia clampeado solo por arriba (Math.min(1,...)) -- qr.colapsoInicio
+  // se fija con un performance.now() propio DENTRO de iniciarColapso(),
+  // que corre despues del "ahora" que ya se habia capturado al principio
+  // de tick(). En el primerisimo frame del colapso, ese "ahora" (mas
+  // viejo) puede ser menor que colapsoInicio, dando t negativo -- y de
+  // ahi un ease negativo y un radio negativo en arc(), que tira una
+  // excepcion real (DOMException) y no un simple numero raro.
+  const t=REDUCIR_MOVIMIENTO ? 1 : Math.max(0, Math.min(1,(ahora-qr.colapsoInicio)/QR_COLAPSO_MS));
   const ease=1-Math.pow(1-t,3);
   const centro=qr.colapsoCentro;
   if(!REDUCIR_MOVIMIENTO){
     const objetivo={ tl:centro, tr:centro, br:centro, bl:centro };
     dibujarCuadrilatero(lerpCorners(qr.actual, objetivo, ease), 1-ease*0.4);
     // Pulso del color de marca expandiendose desde el centro del QR.
+    // Math.max(0, ...) es un segundo cinturon de seguridad -- con t ya
+    // clampeado a [0,1] el radio no deberia poder ser negativo, pero
+    // arc() no perdona ni un numero levemente negativo por error de
+    // redondeo, y esto es barato de garantizar.
     const radioMax=guiaRect ? Math.max(guiaRect.w,guiaRect.h)*0.55 : 140;
+    const radioPulso=Math.max(0, 8+ease*radioMax);
     camCtx.save();
     camCtx.globalAlpha=(1-ease)*0.9;
     camCtx.strokeStyle='#8B6BFF'; camCtx.lineWidth=6;
-    camCtx.beginPath(); camCtx.arc(centro.x,centro.y,8+ease*radioMax,0,Math.PI*2); camCtx.stroke();
+    camCtx.beginPath(); camCtx.arc(centro.x,centro.y,radioPulso,0,Math.PI*2); camCtx.stroke();
     camCtx.restore();
   }
   if(t>=1){
@@ -1137,7 +1156,7 @@ function tick(){
       const img=ctx.getImageData(0,0,canvas.width,canvas.height);
       const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
       if(r && r.location){
-        actualizarDeteccionQR(mapLocationACamView(r.location, s, fit), r.data||null);
+        actualizarDeteccionQR(mapLocationACamView(r.location, s, fit), r.data||null, ahora);
       }else{
         perderDeteccionQR();
       }
@@ -1170,7 +1189,23 @@ function tick(){
       // real y recien despues aparezca el overlay de verificacion.
     }
   }
-  dibujarReticulo(ahora);
+  // El dibujo del reticulo (retoques visuales) nunca puede tumbar el loop
+  // real de camara + decodificado -- una excepcion aca (como el bug de
+  // radio negativo en arc() que ya paso) no puede dejar al operario con
+  // la camara colgada. Se loguea y se sigue.
+  try{
+    dibujarReticulo(ahora);
+  }catch(e){
+    console.error('[reticulo] Error dibujando el overlay del escaner, se ignora este frame:', e);
+    // Si el error corto el colapso de un escaneo que YA decodifico
+    // (dataPendiente), el escaneo en si tiene que completarse igual --
+    // no puede depender de que el adorno funcione.
+    if(qr.estado==='colapsando' && qr.dataPendiente){
+      const dataPendiente=qr.dataPendiente;
+      qr.estado='reposo'; qr.actual=null; qr.destino=null; qr.colapsoCentro=null; qr.dataPendiente=null;
+      onScan(dataPendiente);
+    }
+  }
   requestAnimationFrame(tick);
 }
 
