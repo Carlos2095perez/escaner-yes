@@ -41,7 +41,13 @@ canvas{display:none}
    cosmetico conocido, aceptado por ahora: primero que la camara ande
    fluida, despues se retoma. */
 #video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover;pointer-events:none}
+/* El triangulo de play que aparece sobre el video en Chrome Android es
+   especificamente el "start playback button" del reproductor nativo --
+   el selector generico ::-webkit-media-controls no alcanza para tapar
+   ESE control puntual, hace falta apuntarle directo. */
 #video::-webkit-media-controls{display:none!important}
+#video::-webkit-media-controls-panel{display:none!important}
+#video::-webkit-media-controls-start-playback-button{display:none!important;-webkit-appearance:none}
 
 /* ---------- Reactivando la camara (al volver de segundo plano) ----------
    Android termina los MediaStreamTracks de la camara para liberar el
@@ -290,7 +296,7 @@ canvas{display:none}
 </style>
 </head>
 <body>
-<video id="video" muted playsinline autoplay></video>
+<video id="video" autoplay muted playsinline disablepictureinpicture></video>
 <canvas id="canvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
@@ -1175,29 +1181,59 @@ async function onScan(texto, fotoOverride){
 // Confirmacion con el backend, separada de onScan() para poder reintentarla
 // desde el boton del toast sin tener que volver a escanear el QR.
 async function confirmarConServidor(datos, resultadoLocal){
+  // LOG TEMPORAL DE DIAGNOSTICO -- el mensaje generico "no se pudo
+  // confirmar" no dice si fue timeout, error de red, sesion vencida, o un
+  // rechazo de RLS en Supabase. Sacar una vez identificada la causa real.
+  const t0=performance.now();
   try{
-    const { data:{ session } } = await sbc.auth.getSession();
-    const resp=await fetch(NUVO_API+'/api/scans/log', {
-      method:'POST',
-      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
-      body: JSON.stringify({
-        veredicto: resultadoLocal.veredicto,
-        monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
-        vendedor: vCode || null,
-        comprobante: datos.comprobante || null,
-        qrUuid: datos.uuid || null,
-        qrHash: datos.hash || null,
-        ordenante: datos.ordenante || null,
-        motivos: (resultadoLocal.motivos||[]).join('; ').slice(0,500) || null,
-      }),
-    });
-    const body=await resp.json().catch(()=>({}));
+    const { data:{ session }, error:errSesion } = await sbc.auth.getSession();
+    console.log('[DIAG confirmar] getSession() ->',
+      'session:', session ? 'presente' : 'AUSENTE',
+      '| access_token:', session && session.access_token ? ('presente, largo '+session.access_token.length) : 'AUSENTE',
+      '| expires_at:', session && session.expires_at ? new Date(session.expires_at*1000).toISOString() : 'n/d',
+      '| error:', errSesion);
+    let resp;
+    try{
+      resp=await fetch(NUVO_API+'/api/scans/log', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+(session?session.access_token:'') },
+        body: JSON.stringify({
+          veredicto: resultadoLocal.veredicto,
+          monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
+          vendedor: vCode || null,
+          comprobante: datos.comprobante || null,
+          qrUuid: datos.uuid || null,
+          qrHash: datos.hash || null,
+          ordenante: datos.ordenante || null,
+          motivos: (resultadoLocal.motivos||[]).join('; ').slice(0,500) || null,
+        }),
+      });
+    }catch(errFetch){
+      // fetch() rechaza (no responde con status) cuando la RED falla de
+      // verdad -- DNS, sin conexion, CORS -- nunca por un 4xx/5xx del
+      // servidor (eso cae en el bloque de abajo, con resp.ok===false).
+      // No hay AbortController/timeout configurado en este fetch, asi que
+      // "timeout" no puede distinguirse todavia de "sin red" con este log
+      // -- ambos caen aca como el mismo TypeError generico del navegador.
+      console.log('[DIAG confirmar] fetch() RECHAZADO tras', Math.round(performance.now()-t0), 'ms ->',
+        'tipo:', errFetch && errFetch.name, '| mensaje:', errFetch && errFetch.message);
+      throw errFetch;
+    }
+    const bodyTexto=await resp.text();
+    let body={};
+    try{ body=JSON.parse(bodyTexto); }catch(errParse){}
+    console.log('[DIAG confirmar] respuesta HTTP tras', Math.round(performance.now()-t0), 'ms ->',
+      'status:', resp.status, resp.statusText,
+      '| ok:', resp.ok,
+      '| body:', bodyTexto.slice(0,500));
     if(resp.ok){
       if(body.duplicado){
         return { resultado:{ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] }, confirmadoServidor:true, fallo:false };
       }
       return { resultado:resultadoLocal, confirmadoServidor:true, fallo:false };
     }
+    // Un 401/403 aca es tipicamente sesion vencida o RLS rechazando la
+    // consulta; el status+body de arriba dice cual de los dos es.
     return {
       resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'No se pudo confirmar con el servidor. Revisando en modo local.',
@@ -1208,6 +1244,8 @@ async function confirmarConServidor(datos, resultadoLocal){
     // vendiendo offline), pero se avisa -- con toast INMEDIATO ademas del
     // motivo que ya queda escrito en la pantalla de resultado -- en vez
     // de degradar en silencio.
+    console.log('[DIAG confirmar] confirmarConServidor() fallo tras', Math.round(performance.now()-t0), 'ms ->',
+      'tipo:', e && e.name, '| mensaje:', e && e.message);
     return {
       resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'Sin conexión: no se pudo verificar que el comprobante no esté repetido.',
