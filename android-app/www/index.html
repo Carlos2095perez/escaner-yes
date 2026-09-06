@@ -69,14 +69,51 @@ canvas{display:none}
 .live .rec{width:7px;height:7px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.25}}
 
-/* .frame ya no se ve ni se anima por CSS -- queda solo como referencia de
-   layout (JS lee su getBoundingClientRect() como "guia" del reticulo) para
-   no duplicar en JS la cuenta de min(76vw,300px). Todo lo visual (esquinas
-   respirando, oscurecimiento exterior, cuadrilatero real, colapso+pulso de
-   exito) se dibuja en canvas 2D dentro de dibujarReticulo(), dentro del
-   mismo tick() donde ya se decodifica el QR -- ver el script. */
+/* Recuadro guia: borde neon animado (CSS puro, sin JS por frame) + linea
+   de barrido -- version estable, revertida despues de que el reticulo
+   reactivo (contorno siguiendo al QR real) resultara en coordenadas mal
+   escaladas (jsQR trabaja en el canvas de analisis reducido, el dibujo
+   iba a resolucion de pantalla con DPR sin convertir) y, aparte, en
+   dudas de fluidez por decodificar sin throttle. Vuelve a esto -- que
+   funcionaba y no colgaba nada -- hasta medir con numeros reales.
+   .frame vive encima de #camView porque .scan-ui (su contenedor) ya
+   tiene mas z-index (2) que #camView (0). */
+@property --angle{syntax:'<angle>';inherits:false;initial-value:0deg}
+
 .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1;
   border-radius:26px}
+/* Halo: capa unica con blur, mas grande que el marco, pintada primero
+   (queda debajo del borde nitido de .frame::after). Mismo conic-gradient
+   y misma animacion que el borde para que giren pegados. */
+.frame::before{content:"";position:absolute;inset:-8px;box-sizing:border-box;padding:11px;
+  border-radius:34px;
+  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  filter:blur(10px);opacity:.65;
+  animation:girar-neon 3s linear infinite}
+/* Borde neon nitido: mismo truco de doble mascara, sin blur, recorriendo
+   el perimetro con un conic-gradient que gira via --angle. */
+.frame::after{content:"";position:absolute;inset:0;box-sizing:border-box;padding:3px;
+  border-radius:26px;
+  background:conic-gradient(from var(--angle), transparent 0deg, transparent 40deg, var(--nuvo-violeta-claro) 110deg, var(--violeta) 180deg, var(--nuvo-azul) 250deg, transparent 320deg, transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;
+  mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite:exclude;
+  animation:girar-neon 3s linear infinite}
+@keyframes girar-neon{to{--angle:360deg}}
+/* La linea se mueve con transform (no con "top") para que la anime el
+   compositor, no el hilo principal. El wrapper .laser-track ocupa todo
+   el marco (inset:0) para que el porcentaje de translateY se calcule
+   sobre la altura del marco, no la de la linea. */
+.laser-track{position:absolute;inset:0;animation:sweep 2.4s cubic-bezier(.45,0,.55,1) infinite;will-change:transform}
+@keyframes sweep{0%{transform:translateY(-4%)}50%{transform:translateY(92%)}100%{transform:translateY(-4%)}}
+.laser{position:absolute;left:4%;right:4%;top:0;height:52px;border-radius:8px;
+  background:linear-gradient(180deg,transparent,rgba(255,199,0,.08) 30%,rgba(255,199,0,.6) 50%,rgba(255,199,0,.08) 70%,transparent);
+  filter:blur(.5px)}
 
 .status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
 .status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
@@ -195,7 +232,7 @@ canvas{display:none}
 .result.bad .again{background:#fff;color:#1a1a1a}
 .result.dup .again{background:var(--amber);color:#2A1704}
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
-@media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
+@media (prefers-reduced-motion:reduce){.laser-track,.frame::before,.frame::after,.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
 .cuenta-btn{pointer-events:auto;font-family:var(--sora);font-weight:600;font-size:11px;color:#fff;
@@ -305,7 +342,7 @@ canvas{display:none}
       <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
     </div>
   </div>
-  <div class="frame"></div>
+  <div class="frame"><div class="laser-track"><div class="laser"></div></div></div>
   <div class="side-controls">
     <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
@@ -700,17 +737,24 @@ let ocupado=false, escaneando=false, noHallaDesde=0, zoomTimer=null, stream=null
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
-// ---------- Visor de camara + reticulo, todo en un solo canvas ----------
+// ---------- Visor de camara: #video oculto, se ve #camView ----------
 // #video ya no se ve (1x1px, opacity 0): sigue siendo la fuente real del
 // stream, pero drawImage() lee su frame decodificado sin importar el
 // tamaño/opacidad con que este pintado -- por eso Chrome no tiene sobre
-// que superficie dibujar el triangulo de play nativo nunca mas. Lo que
-// se ve es #camView: cada tick() redibuja ahi el mismo frame que ya se
-// capturo para el analisis (drawImage no tiene costo extra, es la misma
-// imagen decodificada en memoria) con un cover-fit calculado a mano, y
-// encima el reticulo -- todo canvas 2D, sin WebGL, sin CSS animado.
+// que superficie dibujar el triangulo de play nativo nunca mas (esto SI
+// se mantiene: resolvio ese bug). Lo que se ve es #camView: cada tick()
+// redibuja ahi el mismo frame que ya se capturo para el analisis
+// (drawImage no tiene costo extra, es la misma imagen decodificada en
+// memoria) con un cover-fit calculado a mano. El reticulo reactivo que
+// se dibujaba encima (cuadrilatero siguiendo al QR real) se revirtio:
+// las coordenadas de jsQR.location venian del canvas de analisis
+// reducido y se estaban pintando sin convertir a la escala de pantalla
+// (con DPR), lo que daba un cuadrilatero chico y torcido -- y aparte
+// habia dudas reales de fluidez. Vuelve el recuadro guia de siempre
+// (borde neon + linea de barrido, ambos CSS/HTML puros en .frame, ver
+// el <style> y el markup de .scan-ui) hasta medir con numeros si el
+// costo real es el decodificado de jsQR sin throttle.
 const camView=$('camView'), camCtx=camView.getContext('2d');
-const REDUCIR_MOVIMIENTO=matchMedia('(prefers-reduced-motion:reduce)').matches;
 function ajustarCamView(){
   const dpr=window.devicePixelRatio||1;
   camView.width=Math.round(innerWidth*dpr); camView.height=Math.round(innerHeight*dpr);
@@ -729,196 +773,21 @@ function calcularCoverFit(vw, vh, sw, sh){
   const dw=vw*escala, dh=vh*escala;
   return { escala, dw, dh, dx:(sw-dw)/2, dy:(sh-dh)/2 };
 }
-// Traduce un punto que jsQR ubico en el canvas de analisis (reducido por
-// "escala" respecto del video nativo, y opcionalmente recortado si viene
-// del zoom digital central) al mismo cover-fit que se acaba de usar para
-// dibujar ESE frame en camView -- así el reticulo cae pixel a pixel sobre
-// la imagen real, nunca desalineado.
-function mapPuntoACamView(p, escala, fit, recorteX, recorteY){
-  const vx=p.x/escala+(recorteX||0), vy=p.y/escala+(recorteY||0);
-  return { x:vx*fit.escala+fit.dx, y:vy*fit.escala+fit.dy };
-}
-function mapLocationACamView(loc, escala, fit, recorteX, recorteY){
-  const P=(p)=>mapPuntoACamView(p, escala, fit, recorteX, recorteY);
-  return {
-    tl:P(loc.topLeftCorner), tr:P(loc.topRightCorner),
-    br:P(loc.bottomRightCorner), bl:P(loc.bottomLeftCorner),
-    patrones:[P(loc.topLeftFinderPattern), P(loc.topRightFinderPattern), P(loc.bottomLeftFinderPattern)],
-  };
-}
-function centroDeCorners(c){
-  return { x:(c.tl.x+c.tr.x+c.br.x+c.bl.x)/4, y:(c.tl.y+c.tr.y+c.br.y+c.bl.y)/4 };
-}
-function lerpCorners(a, b, t){
-  const L=(p,q)=>({x:p.x+(q.x-p.x)*t, y:p.y+(q.y-p.y)*t});
-  return { tl:L(a.tl,b.tl), tr:L(a.tr,b.tr), br:L(a.br,b.br), bl:L(a.bl,b.bl), patrones:b.patrones };
-}
 
-// ---------- Rectangulo guia (referencia de layout, no se ve por si solo) ----------
-// .frame no tiene estilo visual propio -- solo se usa su geometria real en
-// pantalla (getBoundingClientRect) para saber donde dibujar las esquinas
-// respirando y el hueco del oscurecimiento en reposo.
-let guiaRect=null;
-function actualizarGuiaRect(){
-  const el=document.querySelector('.frame');
-  if(!el) return;
-  const r=el.getBoundingClientRect();
-  guiaRect={ x:r.left, y:r.top, w:r.width, h:r.height, radio:26 };
-}
-actualizarGuiaRect();
-addEventListener('resize', actualizarGuiaRect);
-addEventListener('orientationchange', actualizarGuiaRect);
-
-function trazarRectRedondeado(c, x, y, w, h, r){
-  c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.arcTo(x+w,y,x+w,y+r,r);
-  c.lineTo(x+w,y+h-r); c.arcTo(x+w,y+h,x+w-r,y+h,r);
-  c.lineTo(x+r,y+h); c.arcTo(x,y+h,x,y+h-r,r);
-  c.lineTo(x,y+r); c.arcTo(x,y,x+r,y,r);
-  c.closePath();
-}
-
-// ---------- Estado del reticulo ----------
-const qr={ estado:'reposo', actual:null, destino:null, ultimaDeteccion:0, colapsoInicio:0, colapsoCentro:null, dataPendiente:null };
-const QR_GRACIA_MS=220, QR_LERP=0.25, QR_COLAPSO_MS=200;
-
-function actualizarDeteccionQR(esquinas, data, ahora){
-  if(qr.estado==='colapsando') return; // ya se confirmo un exito, ignora nuevas detecciones
-  ahora=ahora==null ? performance.now() : ahora;
-  qr.destino=esquinas;
-  qr.ultimaDeteccion=ahora;
-  if(qr.estado!=='trackeando'){
-    qr.estado='trackeando';
-    qr.actual=esquinas; // aparece ya en su lugar real, sin saltar desde otro lado
+// ---------- Medicion real de fluidez ----------
+// Cuenta cuantas vueltas del loop de tick() se procesan por segundo real
+// (no un estimado) e imprime el numero en consola cada segundo, para
+// saber con datos -- no a ojo -- si el problema es el overlay o jsQR
+// decodificando sin throttle en cada frame.
+let framesEsteSegundo=0, inicioSegundoFps=0;
+function medirFps(ahora){
+  if(!inicioSegundoFps) inicioSegundoFps=ahora;
+  framesEsteSegundo++;
+  if(ahora-inicioSegundoFps>=1000){
+    console.log('[fps] tick() proceso '+framesEsteSegundo+' frames en el ultimo segundo');
+    framesEsteSegundo=0;
+    inicioSegundoFps=ahora;
   }
-  if(data) iniciarColapso(esquinas, data, ahora);
-}
-function perderDeteccionQR(){
-  if(qr.estado==='trackeando' && performance.now()-qr.ultimaDeteccion>QR_GRACIA_MS){
-    qr.estado='reposo'; qr.actual=null; qr.destino=null;
-  }
-}
-function iniciarColapso(esquinas, data, ahora){
-  qr.estado='colapsando';
-  // Usa el mismo "ahora" que ya midio tick() para este frame en vez de
-  // pedir un performance.now() nuevo aca: ese segundo llamado siempre cae
-  // un poco DESPUES del "ahora" que tick() le va a pasar a dibujarReticulo()
-  // en este mismo ciclo, asi que colapsoInicio quedaba mas adelantado que
-  // el primer "ahora" con el que se lo compara -- eso es lo que producia
-  // el t (y por lo tanto el radio del pulso) negativo en el primer frame.
-  qr.colapsoInicio=ahora==null ? performance.now() : ahora;
-  qr.colapsoCentro=centroDeCorners(esquinas);
-  qr.actual=esquinas;
-  qr.dataPendiente=data;
-}
-
-// ---------- Oscurecimiento exterior (con hueco) ----------
-// Gobernador de rendimiento: es la capa mas cara (un rect de pantalla
-// completa con "evenodd") -- si el frame rate baja sostenido, se la saca
-// primero (tal como se pidio) y se deja el reticulo (esquinas/cuadrilatero)
-// funcionando igual. No se reactiva sola en la misma sesion para no
-// parpadear si el rendimiento anda justo en el limite.
-let oscurecimientoActivo=true;
-const historialDt=[];
-function monitorearRendimiento(dt){
-  if(!oscurecimientoActivo) return;
-  historialDt.push(dt);
-  if(historialDt.length>30) historialDt.shift();
-  if(historialDt.length<30) return;
-  const promedio=historialDt.reduce((a,b)=>a+b,0)/historialDt.length;
-  if(promedio>22){ // ~< 45fps sostenido durante medio segundo
-    oscurecimientoActivo=false;
-    console.log('[perf] Oscurecimiento exterior del escaner desactivado (~'+Math.round(1000/promedio)+'fps sostenido)');
-  }
-}
-function dibujarOscurecimiento(agregarHueco){
-  if(!oscurecimientoActivo) return;
-  camCtx.save();
-  camCtx.beginPath();
-  camCtx.rect(0,0,innerWidth,innerHeight);
-  agregarHueco(camCtx);
-  camCtx.fillStyle='rgba(0,0,0,.35)';
-  camCtx.fill('evenodd');
-  camCtx.restore();
-}
-
-// ---------- Dibujo del reticulo (esquinas / cuadrilatero / colapso) ----------
-function dibujarEsquinasRespirando(ahora, guia){
-  const alpha=REDUCIR_MOVIMIENTO ? 0.6 : 0.4+0.2*(1+Math.sin((ahora%2000)/2000*Math.PI*2));
-  const {x,y,w,h,radio:r}=guia;
-  const largo=Math.min(w,h)*0.22;
-  const grad=camCtx.createLinearGradient(x,y,x+w,y+h);
-  grad.addColorStop(0,'#9B6BFF'); grad.addColorStop(.5,'#6C3AED'); grad.addColorStop(1,'#3B82F6');
-  camCtx.save();
-  camCtx.globalAlpha=alpha; camCtx.strokeStyle=grad; camCtx.lineWidth=4; camCtx.lineCap='round';
-  camCtx.beginPath(); camCtx.moveTo(x,y+largo); camCtx.lineTo(x,y+r); camCtx.arcTo(x,y,x+r,y,r); camCtx.lineTo(x+largo,y); camCtx.stroke();
-  camCtx.beginPath(); camCtx.moveTo(x+w-largo,y); camCtx.lineTo(x+w-r,y); camCtx.arcTo(x+w,y,x+w,y+r,r); camCtx.lineTo(x+w,y+largo); camCtx.stroke();
-  camCtx.beginPath(); camCtx.moveTo(x+w,y+h-largo); camCtx.lineTo(x+w,y+h-r); camCtx.arcTo(x+w,y+h,x+w-r,y+h,r); camCtx.lineTo(x+w-largo,y+h); camCtx.stroke();
-  camCtx.beginPath(); camCtx.moveTo(x+largo,y+h); camCtx.lineTo(x+r,y+h); camCtx.arcTo(x,y+h,x,y+h-r,r); camCtx.lineTo(x,y+h-largo); camCtx.stroke();
-  camCtx.restore();
-}
-function dibujarCuadrilatero(q, alpha){
-  camCtx.save();
-  camCtx.globalAlpha=alpha==null?1:Math.max(0,alpha);
-  camCtx.strokeStyle='#8B6BFF'; camCtx.lineWidth=3; camCtx.lineJoin='round';
-  camCtx.shadowColor='rgba(108,58,237,.6)'; camCtx.shadowBlur=10;
-  camCtx.beginPath();
-  camCtx.moveTo(q.tl.x,q.tl.y); camCtx.lineTo(q.tr.x,q.tr.y); camCtx.lineTo(q.br.x,q.br.y); camCtx.lineTo(q.bl.x,q.bl.y);
-  camCtx.closePath(); camCtx.stroke();
-  camCtx.restore();
-}
-function dibujarPatrones(patrones){
-  camCtx.save();
-  camCtx.fillStyle='#9B6BFF';
-  patrones.forEach(p=>{ camCtx.beginPath(); camCtx.arc(p.x,p.y,5,0,Math.PI*2); camCtx.fill(); });
-  camCtx.restore();
-}
-function dibujarColapso(ahora){
-  // t venia clampeado solo por arriba (Math.min(1,...)) -- qr.colapsoInicio
-  // se fija con un performance.now() propio DENTRO de iniciarColapso(),
-  // que corre despues del "ahora" que ya se habia capturado al principio
-  // de tick(). En el primerisimo frame del colapso, ese "ahora" (mas
-  // viejo) puede ser menor que colapsoInicio, dando t negativo -- y de
-  // ahi un ease negativo y un radio negativo en arc(), que tira una
-  // excepcion real (DOMException) y no un simple numero raro.
-  const t=REDUCIR_MOVIMIENTO ? 1 : Math.max(0, Math.min(1,(ahora-qr.colapsoInicio)/QR_COLAPSO_MS));
-  const ease=1-Math.pow(1-t,3);
-  const centro=qr.colapsoCentro;
-  if(!REDUCIR_MOVIMIENTO){
-    const objetivo={ tl:centro, tr:centro, br:centro, bl:centro };
-    dibujarCuadrilatero(lerpCorners(qr.actual, objetivo, ease), 1-ease*0.4);
-    // Pulso del color de marca expandiendose desde el centro del QR.
-    // Math.max(0, ...) es un segundo cinturon de seguridad -- con t ya
-    // clampeado a [0,1] el radio no deberia poder ser negativo, pero
-    // arc() no perdona ni un numero levemente negativo por error de
-    // redondeo, y esto es barato de garantizar.
-    const radioMax=guiaRect ? Math.max(guiaRect.w,guiaRect.h)*0.55 : 140;
-    const radioPulso=Math.max(0, 8+ease*radioMax);
-    camCtx.save();
-    camCtx.globalAlpha=(1-ease)*0.9;
-    camCtx.strokeStyle='#8B6BFF'; camCtx.lineWidth=6;
-    camCtx.beginPath(); camCtx.arc(centro.x,centro.y,radioPulso,0,Math.PI*2); camCtx.stroke();
-    camCtx.restore();
-  }
-  if(t>=1){
-    const dataPendiente=qr.dataPendiente;
-    qr.estado='reposo'; qr.actual=null; qr.destino=null; qr.colapsoCentro=null; qr.dataPendiente=null;
-    // Recien aca aparece el overlay de verificacion -- no antes, para que
-    // se vea primero el colapso+pulso completo (200ms) sobre la imagen real.
-    if(dataPendiente) onScan(dataPendiente);
-  }
-}
-function dibujarReticulo(ahora){
-  if(!guiaRect) return;
-  if(qr.estado==='colapsando'){ dibujarColapso(ahora); return; }
-  if(qr.estado==='trackeando' && qr.actual){
-    if(qr.destino) qr.actual=REDUCIR_MOVIMIENTO ? qr.destino : lerpCorners(qr.actual, qr.destino, QR_LERP);
-    dibujarOscurecimiento((c)=>{ c.moveTo(qr.actual.tl.x,qr.actual.tl.y); c.lineTo(qr.actual.tr.x,qr.actual.tr.y); c.lineTo(qr.actual.br.x,qr.actual.br.y); c.lineTo(qr.actual.bl.x,qr.actual.bl.y); c.closePath(); });
-    dibujarCuadrilatero(qr.actual);
-    dibujarPatrones(qr.actual.patrones);
-    return;
-  }
-  dibujarOscurecimiento((c)=>trazarRectRedondeado(c, guiaRect.x, guiaRect.y, guiaRect.w, guiaRect.h, guiaRect.radio));
-  dibujarEsquinasRespirando(ahora, guiaRect);
 }
 
 $('btnStart').addEventListener('click', activar);
@@ -986,10 +855,6 @@ async function comenzarCamara(){
   // hardware) -- si se espera, queda una pausa visible con el texto de
   // "Activa la camara", que se sentia como un paso/bienvenida de mas.
   $('montoGate').style.display='none'; $('gate').style.display='none'; $('scanUi').classList.add('on');
-  // .frame estaba dentro de #scanUi con display:none hasta esta linea --
-  // getBoundingClientRect() antes de esto da todo en 0. Recien ahora tiene
-  // sentido medirlo para el reticulo del escaner.
-  actualizarGuiaRect();
   const ok=await iniciarCamara();
   if(ok){
     localStorage.setItem('nuvoCameraGranted','1');
@@ -1131,36 +996,35 @@ function detenerCamara(){
 // fluida. jsQR lee perfecto un QR de comprobante a una resolucion mucho
 // menor, asi que se analiza reducido y el hilo principal queda libre.
 const ANALISIS_MAX=720;
-let ultimoTickTs=0;
 function tick(){
   if(!escaneando) return;
   const ahora=performance.now();
-  monitorearRendimiento(ultimoTickTs ? ahora-ultimoTickTs : 16);
-  ultimoTickTs=ahora;
+  medirFps(ahora);
 
   if(video.readyState===video.HAVE_ENOUGH_DATA){
     const vw=video.videoWidth, vh=video.videoHeight;
     // Mismo frame que ya esta decodificado en memoria: se dibuja a pantalla
     // completa (cover-fit manual, sin deformar) para que #video invisible
-    // nunca sea lo que el operario ve.
-    const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
-    camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
+    // nunca sea lo que el operario ve. Esto es lo unico que queda del
+    // "overlay" -- envuelto en try/catch para que un fallo de dibujo (el
+    // que ya paso una vez con el reticulo reactivo) nunca pueda tumbar el
+    // loop real de camara + decodificado.
+    try{
+      const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
+      camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
+    }catch(e){
+      console.error('[camView] Error dibujando el frame de camara, se ignora este frame:', e);
+    }
 
-    // Mientras el cuadrilatero esta colapsando (exito ya confirmado) no
-    // hace falta seguir decodificando -- se ahorra el getImageData+jsQR de
-    // esos ~200ms, que es el unico costo real de este loop.
-    if(!ocupado && qr.estado!=='colapsando'){
+    if(!ocupado){
       const s=Math.min(1, ANALISIS_MAX/Math.max(vw,vh));
       canvas.width=Math.round(vw*s); canvas.height=Math.round(vh*s);
       ctx.drawImage(video,0,0,canvas.width,canvas.height);
       const img=ctx.getImageData(0,0,canvas.width,canvas.height);
       const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-      if(r && r.location){
-        actualizarDeteccionQR(mapLocationACamView(r.location, s, fit), r.data||null, ahora);
+      if(r && r.data){
+        onScan(r.data);
       }else{
-        perderDeteccionQR();
-      }
-      if(!(r && r.data)){
         const t=Date.now();
         if(!noHallaDesde) noHallaDesde=t;
         const tardando=t-noHallaDesde;
@@ -1182,28 +1046,6 @@ function tick(){
           zoomTimer=setInterval(intentoConZoom, 350);
         }
       }
-      // Si decodifico (r.data), NO se llama onScan() aca todavia --
-      // actualizarDeteccionQR() ya disparo el colapso, y es dibujarReticulo()
-      // el que llama a onScan() cuando termina de animarlo (200ms despues),
-      // para que el operario vea primero el colapso+pulso sobre la imagen
-      // real y recien despues aparezca el overlay de verificacion.
-    }
-  }
-  // El dibujo del reticulo (retoques visuales) nunca puede tumbar el loop
-  // real de camara + decodificado -- una excepcion aca (como el bug de
-  // radio negativo en arc() que ya paso) no puede dejar al operario con
-  // la camara colgada. Se loguea y se sigue.
-  try{
-    dibujarReticulo(ahora);
-  }catch(e){
-    console.error('[reticulo] Error dibujando el overlay del escaner, se ignora este frame:', e);
-    // Si el error corto el colapso de un escaneo que YA decodifico
-    // (dataPendiente), el escaneo en si tiene que completarse igual --
-    // no puede depender de que el adorno funcione.
-    if(qr.estado==='colapsando' && qr.dataPendiente){
-      const dataPendiente=qr.dataPendiente;
-      qr.estado='reposo'; qr.actual=null; qr.destino=null; qr.colapsoCentro=null; qr.dataPendiente=null;
-      onScan(dataPendiente);
     }
   }
   requestAnimationFrame(tick);
@@ -1251,7 +1093,7 @@ $('fileInput').addEventListener('change', e=>{
 
 // Intento lento en paralelo: recorte central a resolucion nativa (zoom digital).
 function intentoConZoom(){
-  if(!escaneando || ocupado || qr.estado==='colapsando' || video.readyState!==video.HAVE_ENOUGH_DATA) return;
+  if(!escaneando || ocupado || video.readyState!==video.HAVE_ENOUGH_DATA) return;
   const vw=video.videoWidth, vh=video.videoHeight;
   const lado=Math.round(Math.min(vw,vh)*0.55);
   const sx=Math.round((vw-lado)/2), sy=Math.round((vh-lado)/2);
@@ -1259,10 +1101,7 @@ function intentoConZoom(){
   zoomCtx.drawImage(video, sx, sy, lado, lado, 0, 0, lado, lado);
   const img=zoomCtx.getImageData(0,0,lado,lado);
   const r=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
-  if(r && r.location){
-    const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
-    actualizarDeteccionQR(mapLocationACamView(r.location, 1, fit, sx, sy), r.data||null);
-  }
+  if(r && r.data) onScan(r.data);
 }
 function detenerZoom(){
   if(zoomTimer){ clearInterval(zoomTimer); zoomTimer=null; }
