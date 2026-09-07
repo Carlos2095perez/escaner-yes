@@ -32,22 +32,17 @@
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
-/* Vuelve a mostrarse el <video> directo (object-fit:cover, gratis via el
-   compositor del navegador) en vez de redibujarlo a un canvas cada frame
-   en el hilo principal -- ese copiado no hacia falta si no hay overlays
-   dibujados encima, y sumaba costo real al pipeline. Puede volver a
-   aparecer el triangulo de play nativo del navegador sobre el video en
-   ciertos casos (WebView sin frames que pintar) -- es un problema
-   cosmetico conocido, aceptado por ahora: primero que la camara ande
-   fluida, despues se retoma. */
-#video{position:fixed;inset:0;z-index:0;background:#000;width:100vw;height:100vh;object-fit:cover;pointer-events:none}
-/* El triangulo de play que aparece sobre el video en Chrome Android es
-   especificamente el "start playback button" del reproductor nativo --
-   el selector generico ::-webkit-media-controls no alcanza para tapar
-   ESE control puntual, hace falta apuntarle directo. */
+/* El triangulo de play nativo de Chrome Android aparece SUPERPUESTO al
+   video (no en su lugar) incluso con los selectores puntuales
+   (::-webkit-media-controls-start-playback-button, etc.) -- algunos
+   builds del WebView ignoran esos pseudo-elementos. La unica forma
+   confirmada de que sea imposible que aparezca es que el <video> no
+   tenga superficie visible sobre la que dibujarlo: vuelve a ocultarse
+   (1x1px, opacity 0) y lo que se ve es #camView, un canvas donde
+   dibujarLoop() redibuja el mismo frame a pantalla completa. */
+#video{position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
 #video::-webkit-media-controls{display:none!important}
-#video::-webkit-media-controls-panel{display:none!important}
-#video::-webkit-media-controls-start-playback-button{display:none!important;-webkit-appearance:none}
+#camView{display:block;position:fixed;inset:0;z-index:0;background:#000}
 
 /* ---------- Reactivando la camara (al volver de segundo plano) ----------
    Android termina los MediaStreamTracks de la camara para liberar el
@@ -297,6 +292,7 @@ canvas{display:none}
 </head>
 <body>
 <video id="video" autoplay muted playsinline disablepictureinpicture></video>
+<canvas id="camView"></canvas>
 <canvas id="canvas"></canvas>
 
 <div class="scan-ui" id="scanUi">
@@ -685,8 +681,15 @@ document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState!=='visible' || !escaneando) return;
   // Si el track sigue "live" (no todos los backgrounds matan la camara),
   // no hace falta reiniciar nada -- evita un corte/skeleton innecesario.
+  // Pero el track vivo no garantiza que el <video> este reproduciendo: el
+  // WebView puede haberlo pausado sin terminar el track, y eso es
+  // exactamente lo que "diagnosticarVideoPlay" chequea y corrige.
   const track=stream && stream.getVideoTracks()[0];
-  if(!track || track.readyState==='ended') reiniciarCamara();
+  if(!track || track.readyState==='ended'){
+    reiniciarCamara();
+  }else{
+    diagnosticarVideoPlay('volver de segundo plano, track sigue vivo');
+  }
 });
 
 let voces=[];
@@ -704,11 +707,82 @@ let ocupado=false, escaneando=false, noHallaDesde=0, stream=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
-// ---------- Visor de camara: #video directo, sin canvas de por medio ----------
-// Volvio a mostrarse #video tal cual (object-fit:cover via CSS, gratis en
-// el compositor del navegador) -- copiar cada frame a un canvas en el
-// hilo principal solo tenia sentido si se dibujaba algo encima, y ya no
-// se dibuja nada encima.
+// LOG TEMPORAL DE DIAGNOSTICO -- confirma si el <video> quedo pausado
+// (el triangulo de play nativo aparece SUPERPUESTO, no en lugar del
+// video, cuando eso pasa con el track todavia vivo) y, si es asi, fuerza
+// un play() explicito en vez de esperar a que se resuelva solo.
+async function diagnosticarVideoPlay(etiqueta){
+  console.log('[DIAG cam] ('+etiqueta+') video.paused:', video.paused,
+    '| readyState:', video.readyState, '| muted:', video.muted,
+    '| videoWidth:', video.videoWidth, '| videoHeight:', video.videoHeight);
+  if(video.paused){
+    console.log('[DIAG cam] ('+etiqueta+') video estaba pausado -- forzando play() explicito');
+    try{
+      await video.play();
+      console.log('[DIAG cam] ('+etiqueta+') play() explicito OK. video.paused ahora:', video.paused);
+    }catch(err){
+      console.log('[DIAG cam] ('+etiqueta+') play() explicito RECHAZADO:', err && err.name, '|', err && err.message);
+    }
+  }
+}
+
+// ---------- Visor de camara: #video oculto, se ve #camView ----------
+// Vuelve el canvas: es la unica forma confirmada de que el triangulo de
+// play nativo de Chrome Android sea IMPOSIBLE de mostrar (no hay
+// superficie visible del <video> sobre la que dibujarlo). El lag que
+// hizo sacar el canvas la vez pasada no era este redibujado -- era jsQR
+// corriendo sin throttle en el hilo principal, ya resuelto abajo
+// (BarcodeDetector / Worker + 10/seg maximo). dibujarLoop() es la unica
+// pieza que hace este canvas: copia el frame ya decodificado en memoria
+// a pantalla completa (cover-fit manual), sin overlays ni efectos.
+const camView=$('camView'), camCtx=camView.getContext('2d');
+function ajustarCamView(){
+  const dpr=window.devicePixelRatio||1;
+  camView.width=Math.round(innerWidth*dpr); camView.height=Math.round(innerHeight*dpr);
+  camView.style.width=innerWidth+'px'; camView.style.height=innerHeight+'px';
+  camCtx.setTransform(dpr,0,0,dpr,0,0);
+}
+ajustarCamView();
+addEventListener('resize', ajustarCamView);
+addEventListener('orientationchange', ajustarCamView);
+
+// Cover-fit manual (equivalente a object-fit:cover, pero calculado a mano
+// porque #video ya no es lo que se ve): llena innerWidth x innerHeight
+// recortando lo que sobra del video nativo, sin deformarlo.
+function calcularCoverFit(vw, vh, sw, sh){
+  const escala=Math.max(sw/vw, sh/vh);
+  const dw=vw*escala, dh=vh*escala;
+  return { escala, dw, dh, dx:(sw-dw)/2, dy:(sh-dh)/2 };
+}
+
+// Medicion de fps de dibujo -- para confirmar que el canvas no vuelve a
+// meter lag. Separada de la medicion de decodificado (mas abajo).
+let dibujoFramesSeg=0, ultimoReporteDibujo=0;
+function medirFpsDibujo(ahora){
+  dibujoFramesSeg++;
+  if(!ultimoReporteDibujo) ultimoReporteDibujo=ahora;
+  if(ahora-ultimoReporteDibujo>=1000){
+    console.log('[medicion] dibujo: '+dibujoFramesSeg+' fps');
+    dibujoFramesSeg=0; ultimoReporteDibujo=ahora;
+  }
+}
+function dibujarLoop(){
+  if(!escaneando) return;
+  const ahora=performance.now();
+  if(video.readyState===video.HAVE_ENOUGH_DATA){
+    // Envuelto en try/catch para que un fallo de dibujo nunca pueda
+    // tumbar el loop de camara.
+    try{
+      const vw=video.videoWidth, vh=video.videoHeight;
+      const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
+      camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
+    }catch(e){
+      console.error('[camView] Error dibujando el frame de camara, se ignora este frame:', e);
+    }
+  }
+  medirFpsDibujo(ahora);
+  requestAnimationFrame(dibujarLoop);
+}
 
 // ---------- Decodificado fuera del hilo principal ----------
 // La falta de fluidez no era (solo) el overlay -- era jsQR corriendo en el hilo
@@ -937,7 +1011,14 @@ async function iniciarCamara(silencioso){
     }
     detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
+    requestAnimationFrame(dibujarLoop);
     requestAnimationFrame(cicloDecodificado);
+    // LOG TEMPORAL DE DIAGNOSTICO -- el triangulo de play nativo aparece
+    // SUPERPUESTO al video (no en lugar de el): la camara sigue viva pero
+    // Chrome cree que el video esta pausado. Este chequeo un segundo
+    // despues confirma si eso pasa incluso cuando play() recien
+    // resolvio OK.
+    setTimeout(()=>diagnosticarVideoPlay('1s despues de iniciar'), 1000);
     return true;
   }catch(e){
     // El mensaje generico ("revisa permisos") no alcanza para diagnosticar --
