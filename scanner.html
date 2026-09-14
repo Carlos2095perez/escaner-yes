@@ -472,6 +472,64 @@ function formatearFechaEC(fecha, modo){
 function diaEcuadorDe(epochMs){
   return Math.floor((epochMs - 5*3600*1000) / 86400000);
 }
+
+// --- Calendario de feriados de Ecuador (para validarLocal, fecha futura) ---
+// TABLA MANTENIBLE -- actualizar cada año cuando el Ministerio del Trabajo
+// publica el calendario oficial (normalmente entre oct-dic del año
+// anterior). Fuente 2026: calendario oficial difundido por prensa
+// (El Comercio / El Universo, ago-2026). Si un año no esta cargado aca
+// COMPLETO, el codigo de abajo no asume nada sobre el -- ver
+// FERIADOS_EC_ANIOS_CUBIERTOS: cae al lado conservador (alerta) en vez de
+// aceptar en silencio una fecha futura con datos de feriados que no tiene.
+const FERIADOS_EC = new Set([
+  // 2026
+  '2026-01-01', // Año Nuevo
+  '2026-02-16','2026-02-17', // Carnaval
+  '2026-04-03', // Viernes Santo
+  '2026-05-01', // Día del Trabajo
+  '2026-05-25', // Batalla de Pichincha (24 may, domingo -> traslada a lunes 25)
+  '2026-08-10', // Primer Grito de Independencia
+  '2026-10-09', // Independencia de Guayaquil
+  '2026-11-02', // Día de los Difuntos
+  '2026-11-03', // Independencia de Cuenca
+  '2026-12-25', // Navidad
+  // 2027 -- solo la fecha fija sin ambigüedad (Año Nuevo nunca se traslada);
+  // completar el resto del año cuando se publique el calendario oficial y
+  // sumar 2027 a FERIADOS_EC_ANIOS_CUBIERTOS.
+  '2027-01-01',
+]);
+const FERIADOS_EC_ANIOS_CUBIERTOS = new Set([2026]); // años con calendario COMPLETO cargado arriba
+function fechaISODeDiaEcuador(diaIndice){
+  return new Date(diaIndice*86400000 + 5*3600*1000).toISOString().slice(0,10);
+}
+function diaSemanaEcuador(diaIndice){
+  return new Date(diaIndice*86400000 + 5*3600*1000).getUTCDay(); // 0=domingo .. 6=sabado
+}
+function esFeriadoConocidoEC(diaIndice){
+  return FERIADOS_EC.has(fechaISODeDiaEcuador(diaIndice));
+}
+// null = "no lo sabemos" (año sin calendario completo cargado) -- el
+// llamador nunca debe tratar null como "es habil".
+function esHabilEC(diaIndice){
+  const anio=Number(fechaISODeDiaEcuador(diaIndice).slice(0,4));
+  if(!FERIADOS_EC_ANIOS_CUBIERTOS.has(anio)) return null;
+  const dow=diaSemanaEcuador(diaIndice);
+  if(dow===0 || dow===6) return false;
+  return !esFeriadoConocidoEC(diaIndice);
+}
+// Busca el siguiente dia habil despues de diaIndice (hasta 10 dias
+// adelante, cubre cualquier puente real). Devuelve null si en el camino
+// entra a un dia de un año sin calendario cargado -- no se puede afirmar
+// cual es "el siguiente habil" sin esos datos.
+function siguienteDiaHabilEC(diaIndice){
+  for(let i=1;i<=10;i++){
+    const habil=esHabilEC(diaIndice+i);
+    if(habil===null) return null;
+    if(habil) return diaIndice+i;
+  }
+  return null;
+}
+
 // Toast propio (reemplaza alert()): no bloquea el hilo ni tapa la pantalla,
 // se anima solo con transform/opacity y desaparece sola.
 function toast(msg, tipo, onRetry){
@@ -1499,7 +1557,7 @@ function validarLocal(d, montoEsperado){
   if(!RE_COMPROBANTE.test(String(d.comprobante||'')))
     m.push('El QR no tiene un formato de comprobante válido (N° comprobante).');
   const ts=Number(d.timestamp);
-  if(!ts || ts>Date.now()+5*60*1000)
+  if(!ts)
     m.push('La fecha del comprobante no es válida.');
   if(m.length) return {veredicto:'RECHAZADO', motivos:m};
 
@@ -1516,10 +1574,40 @@ function validarLocal(d, montoEsperado){
   // o de antes, sin importar cuantas horas "permita" la configuracion. Por
   // eso esta comparacion ya NO usa CONFIG.VENTANA_HORAS (queda sin efecto
   // aqui; el campo del panel admin sigue existiendo pero no controla esto).
-  const diasTranscurridos=Math.max(0, diaEcuadorDe(Date.now())-diaEcuadorDe(ts));
+  const diaHoy=diaEcuadorDe(Date.now());
+  const diaComprobante=diaEcuadorDe(ts);
+  const diasTranscurridos=Math.max(0, diaHoy-diaComprobante);
   if(diasTranscurridos>0){
     const etiqueta=diasTranscurridos===1?'ayer':diasTranscurridos+' días atrás';
     return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. Revisar antes de despachar.']};
+  }
+
+  // Fecha futura: la "condicion de medianoche exacta" que se habia
+  // considerado para distinguir este caso no sirve -- el QR SIEMPRE trae
+  // medianoche Ecuador (ver comentario arriba), tanto en comprobantes de
+  // hoy, de ayer o de mañana, asi que no es una señal que distinga nada.
+  // La unica señal real disponible es el calendario: si hoy es un dia en el
+  // que el banco pudo haber fechado por adelantado la liquidacion (viernes,
+  // fin de semana o feriado) y la fecha del comprobante es exactamente el
+  // siguiente dia habil, sin pasarse de 3 dias. Fuera de eso, una fecha
+  // futura SIEMPRE alerta -- en particular, escaneada un martes, miercoles
+  // o jueves, alerta siempre sin excepcion (ni siquiera si ese dia resulta
+  // ser feriado: ver esHabilEC/FERIADOS_EC mas abajo).
+  const diasAdelanto=diaComprobante-diaHoy;
+  if(diasAdelanto>0){
+    const dowHoy=diaSemanaEcuador(diaHoy); // 0=domingo .. 6=sabado
+    let limpio=false;
+    if(dowHoy!==2 && dowHoy!==3 && dowHoy!==4){ // no es martes/miercoles/jueves
+      const hoyEsFeriado=esFeriadoConocidoEC(diaHoy);
+      const hoyElegible = dowHoy===5||dowHoy===6||dowHoy===0||hoyEsFeriado; // vie/sab/dom/feriado
+      if(hoyElegible){
+        const siguienteHabil=siguienteDiaHabilEC(diaHoy);
+        limpio = siguienteHabil!==null && siguienteHabil===diaComprobante && diasAdelanto<=3;
+      }
+    }
+    if(!limpio){
+      return {veredicto:'ALERTA', motivos:['El comprobante tiene fecha futura: '+formatearFechaEC(ts,'fecha')+' ('+diasAdelanto+' día(s) adelante de hoy). Revisar antes de despachar.']};
+    }
   }
 
   return {veredicto:'PENDIENTE_CONCILIACION', motivos:['Comprobante consistente hacia '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'], ok:true};
