@@ -271,6 +271,11 @@ canvas{display:none}
 .pc-mov-monto.ok{color:var(--green-hi)}
 .pc-mov-monto.no{color:#ff9aa4}
 .pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
+.pc-diag{margin-top:16px}
+.pc-diag-texto{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:11.5px;line-height:1.5;color:#ffb4bb;background:rgba(255,65,82,.08);border:1px solid rgba(255,65,82,.3);
+  border-radius:10px;padding:10px;max-height:180px;overflow:auto;margin-bottom:8px}
+.pc-diag-vacio{color:var(--muted);font-size:13px;padding:8px 0}
 
 .powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
   text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
@@ -429,6 +434,12 @@ canvas{display:none}
       <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
     </div>
     <div id="pcMovs"></div>
+
+    <div class="pc-diag" id="pcDiagWrap">
+      <div class="pc-chart-title">Último error de conexión</div>
+      <div id="pcDiagTexto"></div>
+      <button class="pc-mini-btn pressable" id="btnPcCopiarDiag" style="display:none">Copiar al portapapeles</button>
+    </div>
   </div>
 </div>
 
@@ -562,6 +573,57 @@ $('btnVerificarCodigo').addEventListener('click', async ()=>{
 const CACHE_ACCESO = 'nuvoAccesoCache';
 function guardarCacheAcceso(info){ try{ localStorage.setItem(CACHE_ACCESO, JSON.stringify(info)); }catch(e){} }
 function leerCacheAcceso(){ try{ return JSON.parse(localStorage.getItem(CACHE_ACCESO) || 'null'); }catch(e){ return null; } }
+
+// Diagnostico de conexion visible sin consola: guarda el ultimo fallo de
+// confirmarConServidor() (status HTTP o tipo de rechazo de fetch, mensaje,
+// URL y hora) para mostrarlo en "Mi cuenta" -- reemplaza depender de que el
+// operario tenga la consola del navegador abierta, que nunca llego a pasar.
+const CACHE_DIAG = 'nuvoUltimoErrorConexion';
+function guardarDiagnostico(detalle){
+  try{
+    localStorage.setItem(CACHE_DIAG, JSON.stringify(Object.assign({
+      hora: new Date().toISOString(),
+      url: NUVO_API+'/api/scans/log',
+    }, detalle)));
+  }catch(e){}
+}
+function leerDiagnostico(){ try{ return JSON.parse(localStorage.getItem(CACHE_DIAG) || 'null'); }catch(e){ return null; } }
+function textoDiagnostico(d){
+  return 'Hora: '+formatearFechaEC(d.hora)+' ('+d.hora+')\n'+
+    'URL: '+d.url+'\n'+
+    'Tipo: '+d.tipo+'\n'+
+    'Status HTTP: '+(d.status==null?'—':d.status)+'\n'+
+    'Mensaje: '+d.mensaje;
+}
+function renderDiagnostico(){
+  const d=leerDiagnostico();
+  const btn=$('btnPcCopiarDiag');
+  if(!d){
+    $('pcDiagTexto').innerHTML='<div class="pc-diag-vacio">Sin errores de conexión registrados.</div>';
+    btn.style.display='none';
+    return;
+  }
+  const texto=textoDiagnostico(d);
+  const pre=document.createElement('div');
+  pre.className='pc-diag-texto';
+  pre.textContent=texto;
+  $('pcDiagTexto').innerHTML='';
+  $('pcDiagTexto').appendChild(pre);
+  btn.style.display='';
+  btn.onclick=async ()=>{
+    try{
+      await navigator.clipboard.writeText(texto);
+    }catch(e){
+      // Fallback para WebViews sin permiso de Clipboard API async.
+      const ta=document.createElement('textarea');
+      ta.value=texto; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); }catch(e2){}
+      ta.remove();
+    }
+    toast('Copiado al portapapeles');
+  };
+}
 
 function aplicarAcceso(info){
   nombreUsuario = info.nombre || '';
@@ -1349,6 +1411,7 @@ async function confirmarConServidor(datos, resultadoLocal){
     // mostrar un generico "no se pudo confirmar" que el operario ignoraria.
     if(resp.status===401){
       console.log('[DIAG confirmar] 401 tras', Math.round(performance.now()-t0), 'ms -> sesion vencida, cerrando sesion');
+      guardarDiagnostico({ tipo:'sesion_vencida (401)', status:401, mensaje:'El servidor rechazo el token por vencido o invalido; se cerro la sesion.' });
       await sbc.auth.signOut(); localStorage.removeItem(CACHE_ACCESO); mostrarLogin();
       return { sesionVencida:true, confirmadoServidor:false, fallo:true };
     }
@@ -1365,6 +1428,7 @@ async function confirmarConServidor(datos, resultadoLocal){
       }
       return { resultado:resultadoLocal, confirmadoServidor:true, fallo:false };
     }
+    guardarDiagnostico({ tipo:'respuesta_http_error', status:resp.status, mensaje:(resp.statusText||'')+' | body: '+bodyTexto.slice(0,300) });
     return {
       resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'No se pudo confirmar con el servidor. Revisando en modo local.',
@@ -1377,6 +1441,7 @@ async function confirmarConServidor(datos, resultadoLocal){
     // de degradar en silencio.
     console.log('[DIAG confirmar] confirmarConServidor() fallo tras', Math.round(performance.now()-t0), 'ms ->',
       'tipo:', e && e.name, '| mensaje:', e && e.message);
+    guardarDiagnostico({ tipo:(e&&e.name==='AbortError')?'timeout_8s':'rechazo_fetch ('+(e&&e.name)+')', status:null, mensaje:(e&&e.message)||'sin mensaje' });
     return {
       resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'Sin conexión: no se pudo verificar que el comprobante no esté repetido.',
@@ -1696,6 +1761,7 @@ async function abrirCuenta(){
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
   $('pcMovs').innerHTML='';
   $('pcMovsTitulo').textContent='Movimientos de hoy';
+  renderDiagnostico();
   if(!$('pcDesde').value){ $('pcDesde').value=hoyISOClient(); $('pcHasta').value=hoyISOClient(); }
   try{
     const { data:{ session } } = await sbc.auth.getSession();
