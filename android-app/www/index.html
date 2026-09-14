@@ -326,7 +326,7 @@ canvas{display:none}
     </div>
     <div style="display:flex;align-items:center;gap:10px;pointer-events:auto">
       <button class="cuenta-btn pressable" id="btnCuenta">Mi cuenta</button>
-      <div><div class="vend" id="vendBox"></div><div class="live"><span class="rec"></span>EN VIVO</div></div>
+      <div class="live"><span class="rec"></span>EN VIVO</div>
     </div>
   </div>
   <div class="frame"></div>
@@ -437,7 +437,6 @@ canvas{display:none}
       <input type="date" id="pcHasta">
     </div>
     <div class="pc-filtro">
-      <select id="pcFiltroVendedor"><option value="">Todos los vendedores</option></select>
       <select id="pcFiltroVeredicto">
         <option value="">Todos los estados</option>
         <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
@@ -465,7 +464,6 @@ canvas{display:none}
 </div>
 
 <script>
-const VEND={'004':'Kevin Guamanzara','005':'Daniel Guamanzara','006':'Wilfer Ríos','007':'David Ríos','008':'Luis Chitupanta','009':'Carlos Pérez'};
 // Se llena despues del login con /api/config/validacion (editable desde el
 // panel admin) -- ya no queda fijo en el codigo del escaner.
 let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36};
@@ -597,9 +595,7 @@ window.addEventListener('unhandledrejection', e=>{
   try{ toast('Error: '+((e.reason&&e.reason.message)||e.reason||'desconocido'), 'error'); }catch(_){}
 });
 const params=new URLSearchParams(location.search);
-const vCode=params.get('v')||'';
 const montoURL=parseFloat(params.get('monto'))||0;
-$('vendBox').innerHTML = vCode ? 'Vendedor · <b>'+(VEND[vCode]||vCode)+' ('+vCode+')</b>' : '';
 // Reusa el logo del topbar (ya embebido como data-URI) para la bienvenida,
 // en vez de duplicar el base64 -- un solo lugar con la marca.
 $('gateMark').src = $('brandLogo').src;
@@ -1473,7 +1469,6 @@ async function confirmarConServidor(datos, resultadoLocal){
         body: JSON.stringify({
           veredicto: resultadoLocal.veredicto,
           monto: Number(datos.monto)>0 ? Number(datos.monto) : null,
-          vendedor: vCode || null,
           comprobante: datos.comprobante || null,
           qrUuid: datos.uuid || null,
           qrHash: datos.hash || null,
@@ -1834,17 +1829,15 @@ let ultimoDashboard = {};
 
 function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
 
-// Vendedor (V.-quien-opera) + ordenante (quien pago) + comprobante son la
-// unica forma real de "identificar" un movimiento -- antes la fila solo
-// mostraba hora/veredicto/monto, indistinguible de cualquier otra.
-function nombreVendedor(codigo){ return codigo ? (VEND[codigo]||codigo) : null; }
-
+// Ordenante (quien pago) + comprobante son la forma real de "identificar"
+// un movimiento -- antes la fila solo mostraba hora/veredicto/monto,
+// indistinguible de cualquier otra.
 function renderMovimientos(movs, mensajeVacio){
   if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
   $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
     const ok=ACEPTADOS_PC.includes(m.veredicto);
     const hora=formatearFechaEC(m.fecha, true);
-    const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null, nombreVendedor(m.vendedor)].filter(Boolean).map(escapeHtml).join(' · ');
+    const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null].filter(Boolean).map(escapeHtml).join(' · ');
     return '<div class="pc-mov-row"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
       '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
       '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
@@ -1926,19 +1919,9 @@ async function abrirCuenta(){
   }
 }
 
-// Select de vendedor se llena una sola vez con el mismo VEND que ya usa el
-// resto de la app (identificar quien vendio es parte del punto de este
-// buscador) -- no depende de datos del backend.
-Object.keys(VEND).forEach(codigo=>{
-  const opt=document.createElement('option');
-  opt.value=codigo; opt.textContent=VEND[codigo];
-  $('pcFiltroVendedor').appendChild(opt);
-});
-
 $('btnPcBuscar').addEventListener('click', buscarMovimientos);
 $('btnPcLimpiar').addEventListener('click', ()=>{
   $('pcBuscarTexto').value='';
-  $('pcFiltroVendedor').value='';
   $('pcFiltroVeredicto').value='';
   $('pcDesde').value=hoyISOClient();
   $('pcHasta').value=hoyISOClient();
@@ -1950,9 +1933,8 @@ async function buscarMovimientos(){
   const desde=$('pcDesde').value, hasta=$('pcHasta').value;
   if(!desde || !hasta) return;
   const texto=$('pcBuscarTexto').value.trim();
-  const vendedor=$('pcFiltroVendedor').value;
   const veredicto=$('pcFiltroVeredicto').value;
-  const hayFiltros = Boolean(texto || vendedor || veredicto);
+  const hayFiltros = Boolean(texto || veredicto);
   $('pcMovs').innerHTML='<div class="pc-mov-vacio">Buscando...</div>';
   $('pcMovsTitulo').textContent = (desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango') + (hayFiltros?' · filtrado':'');
   try{
@@ -1960,7 +1942,6 @@ async function buscarMovimientos(){
     if(!session) throw new Error('sin sesion');
     const qs=new URLSearchParams({ desde, hasta });
     if(texto) qs.set('q', texto);
-    if(vendedor) qs.set('vendedor', vendedor);
     if(veredicto) qs.set('veredicto', veredicto);
     const res=await fetch(NUVO_API+'/api/account/dashboard?'+qs.toString(), { headers:{ Authorization:'Bearer '+session.access_token } });
     const d=await res.json();
@@ -2005,12 +1986,11 @@ $('btnPcPdf').addEventListener('click', () => {
 
     doc.autoTable({
       startY: 47,
-      head: [['Fecha','Cliente','N° comprobante','Vendedor','Veredicto','Monto']],
+      head: [['Fecha','Cliente','N° comprobante','Veredicto','Monto']],
       body: movs.map(m=>[
         formatearFechaEC(m.fecha),
         m.ordenante||'—',
         m.comprobante||'—',
-        nombreVendedor(m.vendedor)||'—',
         VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
         m.monto?'$'+Number(m.monto).toFixed(2):'—',
       ]),
@@ -2036,13 +2016,12 @@ $('btnPcExcel').addEventListener('click', () => {
       Fecha: formatearFechaEC(m.fecha),
       Cliente: m.ordenante||'',
       'N° comprobante': m.comprobante||'',
-      Vendedor: nombreVendedor(m.vendedor)||'',
       Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
       Monto: m.monto?Number(m.monto):'',
     }));
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.json_to_sheet(filas);
-    ws['!cols']=[{wch:16},{wch:24},{wch:16},{wch:18},{wch:20},{wch:10}];
+    ws['!cols']=[{wch:16},{wch:24},{wch:16},{wch:20},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
     XLSX.writeFile(wb, 'mis-movimientos_'+desde+'_a_'+hasta+'.xlsx');
   }catch(e){ toast('No se pudo generar el Excel: '+e.message, 'error'); }
@@ -2072,7 +2051,6 @@ async function registrarEscaneo(r, d){
         body: JSON.stringify({
           veredicto: r.veredicto,
           monto: (d && Number(d.monto)>0) ? Number(d.monto) : null,
-          vendedor: vCode || null,
           comprobante: d && d.comprobante || null,
           qrUuid: d && d.uuid || null,
           qrHash: d && d.hash || null,
