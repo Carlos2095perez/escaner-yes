@@ -88,22 +88,19 @@ canvas{display:none}
 .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-52%);width:min(76vw,300px);aspect-ratio:1;
   border-radius:26px;border:2px solid rgba(255,255,255,.55)}
 
-.status{position:absolute;left:0;right:0;bottom:calc(env(safe-area-inset-bottom) + 40px);text-align:center;padding:0 28px}
-.status .pill{display:inline-flex;align-items:center;gap:9px;background:rgba(0,0,0,.5);
-  border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:11px 18px;font-size:14px;font-family:var(--sora);font-weight:600}
-.status .pill.pill-warn{border-color:rgba(255,199,0,.5)}
-.status .pill .d{width:9px;height:9px;border-radius:50%;background:var(--yellow);animation:blink 1s infinite}
-.status small{display:block;margin-top:10px;color:var(--muted);font-size:12.5px}
-.btn-foto{pointer-events:auto;display:none;align-items:center;gap:8px;margin:14px auto 0;font-family:var(--sora);
-  font-weight:700;font-size:14px;border:1px solid rgba(255,255,255,.35);cursor:pointer;padding:11px 20px;
-  border-radius:999px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
-.btn-foto.show{display:inline-flex}
-.btn-foto:active{transform:scale(.97)}
-.side-controls{position:absolute;right:16px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:10px;pointer-events:auto}
-.side-btn{align-items:center;gap:6px;font-family:var(--sora);font-weight:700;font-size:12px;color:#fff;
-  background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.25);padding:9px 12px;border-radius:999px;cursor:pointer;backdrop-filter:blur(6px)}
-.side-btn.active{background:var(--yellow);color:#000;border-color:var(--yellow)}
-.side-btn:active{transform:scale(.95)}
+/* Barra inferior fija (zoom, luz, subir foto): gradiente sutil de negro
+   transparente hacia arriba (no una barra solida) para que los iconos se
+   lean sobre cualquier imagen de fondo. Iconos monocromos finos (SVG,
+   stroke=currentColor), sin texto -- aria-label da la etiqueta accesible.
+   El estado activo (luz encendida, zoom aplicado) se marca con el color de
+   marca en el icono via `color`, nunca con fondo/borde. */
+.bottom-controls{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:center;
+  gap:36px;padding:26px 20px calc(env(safe-area-inset-bottom) + 18px);
+  background:linear-gradient(to top, rgba(0,0,0,.5), rgba(0,0,0,0));pointer-events:none}
+.bottom-btn{pointer-events:auto;width:48px;height:48px;display:flex;align-items:center;justify-content:center;
+  border:0;background:transparent;color:#fff;cursor:pointer;padding:0}
+.bottom-btn svg{width:24px;height:24px}
+.bottom-btn.active{color:var(--violeta)}
 
 /* ---------- Activación ---------- */
 .gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 8%, rgba(155,107,255,.16), transparent 60%), var(--ink);
@@ -370,25 +367,30 @@ canvas{display:none}
     </div>
   </div>
   <div class="frame"></div>
-  <div class="side-controls">
-    <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
-    <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
-    <button class="side-btn pressable" id="btnGaleria">🖼️ Subir foto</button>
-  </div>
-  <div class="status">
-    <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
-    <small>Centra el QR del comprobante en el recuadro</small>
-    <button class="btn-foto pressable" id="btnFoto">📷 No lee, tomar foto</button>
+  <div class="bottom-controls">
+    <button class="bottom-btn pressable" id="btnZoom" style="display:none" aria-label="Zoom">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.3" y1="15.3" x2="21" y2="21"/>
+        <line x1="10.5" y1="7.5" x2="10.5" y2="13.5"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/>
+      </svg>
+    </button>
+    <button class="bottom-btn pressable" id="btnLuz" style="display:none" aria-label="Linterna">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 3h6l-1 4h-4L9 3z"/><path d="M8 7h8v11a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V7z"/><line x1="10" y1="12" x2="14" y2="12"/>
+      </svg>
+    </button>
+    <button class="bottom-btn pressable" id="btnGaleria" aria-label="Subir foto">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 15l-5-5-4 4-3-3-6 6"/>
+      </svg>
+    </button>
   </div>
 </div>
 
-<input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
-<!-- Sin `capture`: a diferencia de fileInput (que fuerza la camara nativa,
-     plan B cuando la lectura en vivo no anda), este abre el selector
-     normal del sistema -- el usuario puede elegir una foto YA existente
-     de la galeria (ej. un comprobante que le llego por WhatsApp), no
-     tomar una nueva. Misma logica de decodificado/validacion de siempre,
-     ver procesarImagenSeleccionada(). -->
+<!-- Sin `capture`: el selector normal del sistema ya ofrece "Camara" como
+     una opcion mas junto con la galeria -- el usuario puede elegir una
+     foto YA existente (ej. un comprobante que le llego por WhatsApp) o
+     tomar una nueva, sin necesitar dos botones/inputs separados. -->
 <input type="file" id="fileInputGaleria" accept="image/*" style="display:none">
 
 <div class="camrestart" id="camRestart">
@@ -859,6 +861,12 @@ function cargarVoces(){ if(hayTTS) voces=speechSynthesis.getVoices(); }
 if(hayTTS){ cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces; }
 
 let ocupado=false, escaneando=false, noHallaDesde=0, stream=null;
+// Contadores de diagnostico de fuga de recursos (ver iniciarCamaraInterna/
+// detenerCamara) + ids de requestAnimationFrame para poder cancelarlos de
+// verdad con cancelAnimationFrame en vez de depender solo de que el propio
+// loop chequee "escaneando" en su proximo tick.
+let tracksCreadosTotal=0, tracksDetenidosTotal=0;
+let dibujoLoopsVivos=0, decodeLoopsVivos=0, dibujoRafId=null, decodeRafId=null;
 const video=$('video'), canvas=$('canvas'), ctx=canvas.getContext('2d', {willReadFrequently:true});
 const zoomCanvas=document.createElement('canvas'), zoomCtx=zoomCanvas.getContext('2d', {willReadFrequently:true});
 
@@ -925,7 +933,7 @@ function medirFpsDibujo(ahora){
   }
 }
 function dibujarLoop(){
-  if(!escaneando) return;
+  if(!escaneando){ dibujoRafId=null; dibujoLoopsVivos=Math.max(0,dibujoLoopsVivos-1); return; }
   const ahora=performance.now();
   if(video.readyState===video.HAVE_ENOUGH_DATA){
     // Envuelto en try/catch para que un fallo de dibujo nunca pueda
@@ -939,7 +947,7 @@ function dibujarLoop(){
     }
   }
   medirFpsDibujo(ahora);
-  requestAnimationFrame(dibujarLoop);
+  dibujoRafId=requestAnimationFrame(dibujarLoop);
 }
 
 // ---------- Decodificado fuera del hilo principal ----------
@@ -1054,7 +1062,6 @@ $('btnCerrarCuenta').addEventListener('click', cerrarCuenta);
 $('btnZoom').addEventListener('click', ()=>{
   zoomAlto=!zoomAlto;
   aplicarNivelZoom(zoomAlto);
-  $('btnZoom').textContent = zoomAlto ? '🔍 Zoom -' : '🔍 Zoom';
   $('btnZoom').classList.toggle('active', zoomAlto);
 });
 
@@ -1062,21 +1069,14 @@ $('btnLuz').addEventListener('click', async ()=>{
   if(!stream || !torchCaps) return;
   torchOn=!torchOn;
   try{ await stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}); }catch(e){ torchOn=!torchOn; return; }
-  $('btnLuz').textContent = torchOn ? '💡 Luz -' : '💡 Luz';
   $('btnLuz').classList.toggle('active', torchOn);
 });
-$('btnFoto').addEventListener('click', ()=>{
-  // Suelta la camara en vivo ANTES de abrir la camara nativa: en iOS, tener
-  // ambas pidiendo la camara a la vez deja la pantalla en negro y el picker
-  // de foto no responde.
-  detenerCamara();
-  $('fileInput').value='';
-  $('fileInput').click();
-});
 $('btnGaleria').addEventListener('click', ()=>{
-  // Mismo motivo que btnFoto: soltar la camara en vivo antes de abrir el
-  // selector, si no en iOS la pantalla queda en negro y el picker no
-  // responde.
+  // Suelta la camara en vivo ANTES de abrir el selector: en iOS, tener
+  // ambas pidiendo la camara a la vez deja la pantalla en negro y el
+  // picker no responde. Sin `capture` en el input, el selector del
+  // sistema ya ofrece "Camara" como una opcion mas junto con la galeria,
+  // asi que no hace falta un boton separado para forzar la camara nativa.
   detenerCamara();
   $('fileInputGaleria').value='';
   $('fileInputGaleria').click();
@@ -1139,12 +1139,26 @@ $('btnConfirmarMonto').addEventListener('click', async ()=>{
   await comenzarCamara();
 });
 
-// Pide la camara y arranca el bucle de escaneo en vivo. Se usa tanto para
-// activar por primera vez como para reanudar despues de un intento con foto
-// y desde reiniciarCamara() (ver mas abajo). `silencioso` evita el toast de
-// error propio cuando quien llama (reiniciarCamara) ya va a mostrar el suyo
-// con boton de Reintentar, para no apilar dos toasts por el mismo fallo.
-async function iniciarCamara(silencioso){
+// iniciarCamara() se llama desde varios lugares independientes que NO se
+// excluyen entre si (confirmar monto, reanudar tras background, cancelar o
+// fallar el picker de foto/galeria, cerrar "Mi cuenta") -- si dos de esas
+// rutas se disparan casi juntas (ej. el picker nativo de galeria cambia la
+// visibilidad de la app, lo que puede disparar reiniciarCamara() justo
+// cuando el picker se cancela), sin este guard cada una pedia su propio
+// getUserMedia() en paralelo y arrancaba su propia cadena de
+// requestAnimationFrame -- streams y loops que se iban acumulando en cada
+// escaneo, exactamente la fuga que hacia que la camara se sintiera cada
+// vez mas lenta hasta colgarse. Ahora un segundo llamado mientras el
+// primero sigue en curso devuelve la MISMA promesa en vez de arrancar
+// otro intento -- iniciarCamaraInterna() (todo el cuerpo de siempre) corre
+// una sola vez por llamado real.
+let iniciarCamaraEnCurso=null;
+function iniciarCamara(silencioso){
+  if(iniciarCamaraEnCurso) return iniciarCamaraEnCurso;
+  iniciarCamaraEnCurso=iniciarCamaraInterna(silencioso).finally(()=>{ iniciarCamaraEnCurso=null; });
+  return iniciarCamaraEnCurso;
+}
+async function iniciarCamaraInterna(silencioso){
   detenerCamara();
   try{
     // ideal (no exact): el navegador se acerca lo mas que pueda sin fallar si
@@ -1177,8 +1191,18 @@ async function iniciarCamara(silencioso){
     }
     detectarCapacidadesCamara();
     escaneando=true; noHallaDesde=0;
-    requestAnimationFrame(dibujarLoop);
-    requestAnimationFrame(cicloDecodificado);
+    tracksCreadosTotal+=stream.getTracks().length;
+    dibujoLoopsVivos++; dibujoRafId=requestAnimationFrame(dibujarLoop);
+    decodeLoopsVivos++; decodeRafId=requestAnimationFrame(cicloDecodificado);
+    // LOG DE DIAGNOSTICO DE FUGA DE RECURSOS -- si "tracks sin liberar" o
+    // "loops vivos" crecen escaneo a escaneo en vez de quedarse en 1, ahi
+    // esta la fuga (stream o loop que no se corto antes de pedir uno
+    // nuevo). En uso normal, los dos numeros deberian ser siempre 1 aca.
+    console.log('[DIAG cam] escaneo iniciado -- tracks creados:', tracksCreadosTotal,
+      '| tracks detenidos:', tracksDetenidosTotal,
+      '| tracks SIN LIBERAR:', tracksCreadosTotal-tracksDetenidosTotal,
+      '| loops de dibujo vivos:', dibujoLoopsVivos,
+      '| loops de decodificado vivos:', decodeLoopsVivos);
     // LOG TEMPORAL DE DIAGNOSTICO -- el triangulo de play nativo aparece
     // SUPERPUESTO al video (no en lugar de el): la camara sigue viva pero
     // Chrome cree que el video esta pausado. Este chequeo un segundo
@@ -1230,17 +1254,17 @@ async function reiniciarCamara(){
 let zoomCaps=null, zoomAlto=false, zoomDigital=1, torchOn=false, torchCaps=false;
 function detectarCapacidadesCamara(){
   zoomCaps=null; zoomAlto=false; zoomDigital=1; torchOn=false; torchCaps=false;
-  $('btnZoom').style.display='inline-flex';
-  $('btnZoom').textContent='🔍 Zoom';
+  $('btnZoom').style.display='flex';
+  $('btnZoom').classList.remove('active');
   $('btnLuz').style.display='none';
+  $('btnLuz').classList.remove('active');
   try{
     const track=stream.getVideoTracks()[0];
     const cap=track.getCapabilities && track.getCapabilities();
     if(cap && cap.zoom) zoomCaps=cap.zoom;
     if(cap && cap.torch){
       torchCaps=true;
-      $('btnLuz').style.display='inline-flex';
-      $('btnLuz').textContent='💡 Luz';
+      $('btnLuz').style.display='flex';
     }
   }catch(e){}
 }
@@ -1264,8 +1288,17 @@ function aplicarNivelZoom(alto){
 // o antes de volver a pedirla limpia).
 function detenerCamara(){
   escaneando=false;
-  detenerZoom();
-  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  // Cancelacion explicita (no solo el flag "escaneando", que un loop ya
+  // programado recien chequea en su proximo tick): si hay un frame de
+  // dibujo o decodificado pendiente, se cancela ya mismo.
+  if(dibujoRafId!==null){ cancelAnimationFrame(dibujoRafId); dibujoRafId=null; dibujoLoopsVivos=Math.max(0,dibujoLoopsVivos-1); }
+  if(decodeRafId!==null){ cancelAnimationFrame(decodeRafId); decodeRafId=null; decodeLoopsVivos=Math.max(0,decodeLoopsVivos-1); }
+  if(stream){
+    const tracks=stream.getTracks();
+    tracksDetenidosTotal+=tracks.length;
+    tracks.forEach(t=>t.stop());
+    stream=null;
+  }
   video.srcObject=null;
 }
 
@@ -1277,13 +1310,13 @@ function detenerCamara(){
 const DECODE_INTERVALO_MS=100;
 let ultimoIntentoDecode=0, decodificando=false;
 function cicloDecodificado(){
-  if(!escaneando) return;
+  if(!escaneando){ decodeRafId=null; decodeLoopsVivos=Math.max(0,decodeLoopsVivos-1); return; }
   const ahora=performance.now();
   if(!ocupado && !decodificando && video.readyState===video.HAVE_ENOUGH_DATA && (ahora-ultimoIntentoDecode)>=DECODE_INTERVALO_MS){
     ultimoIntentoDecode=ahora;
     intentarDecodificar();
   }
-  requestAnimationFrame(cicloDecodificado);
+  decodeRafId=requestAnimationFrame(cicloDecodificado);
 }
 async function intentarDecodificar(){
   decodificando=true;
@@ -1296,21 +1329,12 @@ async function intentarDecodificar(){
     }
     if(texto){
       onScan(texto);
-    }else{
-      const t=Date.now();
-      if(!noHallaDesde) noHallaDesde=t;
-      const tardando=t-noHallaDesde;
-      // Guia progresiva: primero pide acercar, despues sugiere causas comunes,
-      // y por ultimo ofrece el plan B (tomar foto) para no dejar al operario sin salida.
-      if(tardando>6000){
-        $('statusText').textContent='¿No lee? Evita reflejos y toca "Tomar foto"';
-        $('statusText').parentElement.classList.add('pill-warn');
-        $('btnFoto').classList.add('show');
-      }else if(tardando>2500){
-        $('statusText').textContent='Acércate y enfoca el QR…';
-      }else{
-        $('statusText').textContent='Buscando código…';
-      }
+    }else if(!noHallaDesde){
+      // noHallaDesde sigue marcando desde cuando no se encuentra un QR --
+      // eso NO es solo para UI, decodificarQRRecortado() de arriba lo usa
+      // para decidir cuando probar el recorte central. Ya no hay avisos de
+      // texto progresivos (la deteccion funciona bien sola).
+      noHallaDesde=Date.now();
     }
   }catch(e){
     console.error('[decode] Error decodificando:', e);
@@ -1353,25 +1377,20 @@ function procesarImagenSeleccionada(file){
     URL.revokeObjectURL(img.src);
     const texto=decodificarImagen(img);
     if(!texto){
-      $('statusText').textContent='No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.';
+      toast('No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.', 'error');
       iniciarCamara();
       return;
     }
     onScan(texto, imagenADataUrl(img,700));
   };
-  img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; iniciarCamara(); };
+  img.onerror=()=>{ toast('No se pudo leer la foto. Intenta de nuevo.', 'error'); iniciarCamara(); };
   img.src=URL.createObjectURL(file);
 }
-$('fileInput').addEventListener('change', e=>{ procesarImagenSeleccionada(e.target.files[0]); });
 $('fileInputGaleria').addEventListener('change', e=>{ procesarImagenSeleccionada(e.target.files[0]); });
 
 // El recorte central (zoom digital) ya no tiene su propio timer -- ahora
 // es decodificarQRRecortado(), llamado DENTRO del mismo turno de
 // intentarDecodificar() cuando hace falta. Ver mas arriba.
-function detenerZoom(){
-  $('btnFoto').classList.remove('show');
-  $('statusText').parentElement.classList.remove('pill-warn');
-}
 
 // Foto de evidencia del frame que contenia el QR leido (para el registro en el Sheet).
 // Se reduce a un ancho maximo para que el envio sea rapido.
@@ -1389,7 +1408,7 @@ function capturarEvidencia(){
 async function onScan(texto, fotoOverride){
   if(ocupado) return;
   const datos=parsear(texto);
-  if(!datos){ $('statusText').textContent='Ese QR no es un comprobante'; return; }
+  if(!datos){ toast('Ese QR no es un comprobante', 'error'); return; }
   ocupado=true; noHallaDesde=0;
   // Confirmacion tactil inmediata de que se leyo un QR de comprobante,
   // independiente de si despues resulta aceptado o rechazado (ese resultado
@@ -1400,9 +1419,7 @@ async function onScan(texto, fotoOverride){
   // revisa "ocupado", no porque se corte el stream). Asi no
   // hay corte a negro ni congelamiento -- la
   // camara se ve corriendo hasta el instante en que aparece el resultado
-  // (que sí tapa todo con su propio fondo). Solo se frena el intento de
-  // zoom digital de fondo, que ya no tiene sentido si ya se encontro un QR.
-  detenerZoom();
+  // (que sí tapa todo con su propio fondo).
   const foto=fotoOverride || capturarEvidencia();
   $('verify').classList.add('on');
   // Si a los 4s el servidor todavia no respondio, se lo decimos -- una
