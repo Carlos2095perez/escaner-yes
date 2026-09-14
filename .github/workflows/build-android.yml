@@ -43,8 +43,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # packages: '' evita que la accion intente instalar su paquete por
+      # defecto "tools" (el SDK Tools monolitico viejo de Android, que
+      # Google ya saco por completo de su repositorio) -- sin esto,
+      # sdkmanager falla con "Failed to find package 'tools'" y el build
+      # nunca llega a arrancar Gradle. No hace falta ese paquete: Gradle ya
+      # instala solo, via sus propias dependencias del build.gradle, el
+      # platform y los build-tools que realmente necesita.
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Instalar dependencias (Capacitor)
         working-directory: android-app
