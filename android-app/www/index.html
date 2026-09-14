@@ -1586,24 +1586,29 @@ function validarLocal(d, montoEsperado){
   // considerado para distinguir este caso no sirve -- el QR SIEMPRE trae
   // medianoche Ecuador (ver comentario arriba), tanto en comprobantes de
   // hoy, de ayer o de mañana, asi que no es una señal que distinga nada.
-  // La unica señal real disponible es el calendario: si hoy es un dia en el
-  // que el banco pudo haber fechado por adelantado la liquidacion (viernes,
-  // fin de semana o feriado) y la fecha del comprobante es exactamente el
-  // siguiente dia habil, sin pasarse de 3 dias. Fuera de eso, una fecha
-  // futura SIEMPRE alerta -- en particular, escaneada un martes, miercoles
-  // o jueves, alerta siempre sin excepcion (ni siquiera si ese dia resulta
-  // ser feriado: ver esHabilEC/FERIADOS_EC mas abajo).
+  // La unica señal real es el calendario, y se reduce a UNA pregunta: ¿hoy
+  // es un dia NO habil (fin de semana o feriado) o es viernes? Si si, el
+  // banco pudo haber fechado por adelantado la liquidacion al siguiente dia
+  // habil -- legitimo, sin alerta, siempre que la fecha del comprobante sea
+  // exactamente ese siguiente dia habil y no se pase de 3 dias. Si hoy es
+  // un dia habil normal que no es viernes, alerta siempre.
+  //
+  // Importante: esto NO es una lista fija de dias de la semana -- un
+  // feriado en martes cae exactamente en el mismo caso que un sabado (hoy
+  // no habil), asi que tambien queda elegible. Fijarse solo en el dia de
+  // la semana (bloquear martes/miercoles/jueves sin mirar si son feriado)
+  // fue un error: dejaba fuera exactamente el caso real que esto tiene que
+  // cubrir.
   const diasAdelanto=diaComprobante-diaHoy;
   if(diasAdelanto>0){
     const dowHoy=diaSemanaEcuador(diaHoy); // 0=domingo .. 6=sabado
+    const hoyEsFeriado=esFeriadoConocidoEC(diaHoy);
+    const hoyNoHabil = dowHoy===0||dowHoy===6||hoyEsFeriado; // domingo, sabado o feriado
+    const hoyElegible = hoyNoHabil || dowHoy===5; // + viernes
     let limpio=false;
-    if(dowHoy!==2 && dowHoy!==3 && dowHoy!==4){ // no es martes/miercoles/jueves
-      const hoyEsFeriado=esFeriadoConocidoEC(diaHoy);
-      const hoyElegible = dowHoy===5||dowHoy===6||dowHoy===0||hoyEsFeriado; // vie/sab/dom/feriado
-      if(hoyElegible){
-        const siguienteHabil=siguienteDiaHabilEC(diaHoy);
-        limpio = siguienteHabil!==null && siguienteHabil===diaComprobante && diasAdelanto<=3;
-      }
+    if(hoyElegible){
+      const siguienteHabil=siguienteDiaHabilEC(diaHoy);
+      limpio = siguienteHabil!==null && siguienteHabil===diaComprobante && diasAdelanto<=3;
     }
     if(!limpio){
       return {veredicto:'ALERTA', motivos:['El comprobante tiene fecha futura: '+formatearFechaEC(ts,'fecha')+' ('+diasAdelanto+' día(s) adelante de hoy). Revisar antes de despachar.']};
