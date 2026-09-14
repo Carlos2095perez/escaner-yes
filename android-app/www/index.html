@@ -14,6 +14,16 @@
 <link rel="stylesheet" href="styles.css">
 <script src="vendor/jsQR.js"></script>
 <script src="vendor/supabase.js"></script>
+<!-- Capacitor core + plugins de Filesystem/Share -- SOLO se usan para
+     guardar el PDF/Excel de "Mi cuenta" dentro de la app nativa Android,
+     donde doc.save()/XLSX.writeFile() (que dependen del atributo download
+     de un <a>, algo que el WebView de Capacitor no implementa) no hacen
+     nada visible al tocar el boton. Cargarlos aca no rompe nada en la PWA
+     (navegador/iOS): isNativePlatform() da false ahi y el codigo sigue
+     usando doc.save()/XLSX.writeFile() como siempre. -->
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/core@6.2.1/dist/capacitor.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@6.0.4/dist/plugin.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@capacitor/share@6.0.4/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -268,7 +278,7 @@ canvas{display:none}
 .pc-search-wrap input::placeholder{color:var(--muted)}
 .pc-autocomplete{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5;background:var(--ink);
   border:1px solid var(--azul-70);border-radius:10px;overflow-y:auto;max-height:200px;box-shadow:0 14px 28px -10px rgba(0,0,0,.55)}
-.pc-autocomplete-item{pointer-events:auto;padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.07)}
+.pc-autocomplete-item{pointer-events:auto;padding:10px 12px;font-size:13px;color:#fff;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.07)}
 .pc-autocomplete-item:last-child{border-bottom:0}
 .pc-autocomplete-item:hover,.pc-autocomplete-item:active{background:rgba(255,255,255,.08)}
 .pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
@@ -336,7 +346,7 @@ canvas{display:none}
   .pc-buscador{background:#fff;border-color:#E4E7F0}
   .pc-filtro input,.pc-filtro select,.pc-search-wrap input{background:#F5F6FA;border-color:#E4E7F0;color:#0A163D}
   .pc-autocomplete{background:#fff;border-color:#E4E7F0;box-shadow:0 14px 28px -10px rgba(10,22,61,.18)}
-  .pc-autocomplete-item{border-bottom-color:#EEF0F5}
+  .pc-autocomplete-item{border-bottom-color:#EEF0F5;color:#0A163D}
   .pc-autocomplete-item:hover,.pc-autocomplete-item:active{background:#F5F6FA}
   .pc-btn-ghost{color:#5A6076;border-color:#E4E7F0}
   .pc-resumen .item{background:#fff;border-color:#E4E7F0}
@@ -1999,7 +2009,40 @@ function cerrarCuenta(){
   iniciarCamara();
 }
 
-$('btnPcPdf').addEventListener('click', () => {
+function esNativoAndroid(){
+  try{ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }catch(e){ return false; }
+}
+
+// En la app nativa de Android, doc.save()/XLSX.writeFile() no hacen nada
+// visible al tocar "Descargar": dependen del atributo download de un <a>,
+// que el WebView de Capacitor no implementa -- el archivo se genera pero
+// nunca llega a guardarse. Ahi se escribe con el plugin Filesystem en la
+// carpeta Documentos (publica, visible desde otras apps en Android) y se
+// ofrece compartir con Share. En cualquier otro contexto (PWA, navegador,
+// Safari iOS) esto no se llama -- se usa la descarga normal del navegador.
+// Directory.Data (almacenamiento propio de la app) en vez de Documentos:
+// escribir en la carpeta publica de Documentos tiene reglas de permisos
+// que cambian entre versiones de Android (10 exige un flag en el
+// manifest, 11+ las cambia de nuevo) -- Data nunca pide permiso, en
+// ninguna version, porque es privada de la app. El cuadro de compartir
+// (Share) es lo que de verdad entrega el archivo al usuario: desde ahi
+// puede guardarlo en Descargas, mandarlo por WhatsApp o correo, etc.
+async function guardarArchivoNativo(nombreArchivo, base64){
+  const { uri } = await Capacitor.Plugins.Filesystem.writeFile({
+    path: nombreArchivo,
+    data: base64,
+    directory: 'DATA',
+  });
+  try{
+    await Capacitor.Plugins.Share.share({ title: nombreArchivo, url: uri });
+  }catch(e){
+    // El usuario cerro el cuadro de compartir sin elegir nada -- el
+    // archivo se genero bien, solo no se guardo/envio a ningun lado.
+    toast('Archivo generado. Tocá "Descargar" de nuevo para guardarlo o compartirlo.');
+  }
+}
+
+$('btnPcPdf').addEventListener('click', async () => {
   const movs = movimientosMostrados || [];
   if(!movs.length){ toast('No hay movimientos en ese rango.', 'error'); return; }
   try{
@@ -2043,11 +2086,17 @@ $('btnPcPdf').addEventListener('click', () => {
         data.cell.styles.textColor = ok ? [14,124,63] : [194,30,58];
       },
     });
-    doc.save('mis-movimientos_'+desde+'_a_'+hasta+'.pdf');
+    const nombreArchivoPdf='mis-movimientos_'+desde+'_a_'+hasta+'.pdf';
+    if(esNativoAndroid()){
+      const base64=doc.output('datauristring').replace(/^data:.*?;base64,/, '');
+      await guardarArchivoNativo(nombreArchivoPdf, base64);
+    }else{
+      doc.save(nombreArchivoPdf);
+    }
   }catch(e){ toast('No se pudo generar el PDF: '+e.message, 'error'); }
 });
 
-$('btnPcExcel').addEventListener('click', () => {
+$('btnPcExcel').addEventListener('click', async () => {
   const movs = movimientosMostrados || [];
   if(!movs.length){ toast('No hay movimientos en ese rango.', 'error'); return; }
   try{
@@ -2064,7 +2113,13 @@ $('btnPcExcel').addEventListener('click', () => {
     const ws=XLSX.utils.json_to_sheet(filas);
     ws['!cols']=[{wch:16},{wch:24},{wch:16},{wch:20},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
-    XLSX.writeFile(wb, 'mis-movimientos_'+desde+'_a_'+hasta+'.xlsx');
+    const nombreArchivoXlsx='mis-movimientos_'+desde+'_a_'+hasta+'.xlsx';
+    if(esNativoAndroid()){
+      const base64=XLSX.write(wb, { type:'base64', bookType:'xlsx' });
+      await guardarArchivoNativo(nombreArchivoXlsx, base64);
+    }else{
+      XLSX.writeFile(wb, nombreArchivoXlsx);
+    }
   }catch(e){ toast('No se pudo generar el Excel: '+e.message, 'error'); }
 });
 
