@@ -437,7 +437,7 @@ canvas{display:none}
 
 <div class="gate" id="montoGate" style="display:none">
   <h1>¿Cuánto vas a cobrar?</h1>
-  <p>Escribe el monto exacto de la venta antes de escanear. El comprobante se rechaza si el monto no coincide — así evitamos que una transferencia real pero por un valor menor pase como si fuera la venta completa.</p>
+  <p>Escribe el monto exacto a cobrar antes de escanear. El comprobante se rechaza si el monto no coincide — así evitamos que una transferencia real pero por un valor menor pase como si fuera el cobro completo.</p>
   <div id="montoBox">
     <input type="number" id="inMonto" class="monto" inputmode="decimal" step="0.01" min="0.01" placeholder="0.00">
     <button class="btn pressable" id="btnConfirmarMonto">Confirmar y escanear</button>
@@ -785,7 +785,7 @@ async function verificarYAplicar(session, segundoPlano){
               // mayusculas/minusculas normales nunca coincide.
               BENEFICIARIO_CLAVES: (c.beneficiarioClaves||[]).map(k=>String(k).toUpperCase()), VENTANA_HORAS: c.ventanaHoras||36,
               // Elegido por el admin en el perfil de este usuario: 'monto'
-              // pide el monto de la venta antes de escanear (mas seguro),
+              // pide el monto a cobrar antes de escanear (mas seguro),
               // 'directo' escanea sin pedir nada (mas rapido).
               MODO_ESCANEO: c.modoEscaneo==='directo' ? 'directo' : 'monto' };
       }
@@ -1082,10 +1082,10 @@ $('btnGaleria').addEventListener('click', ()=>{
   $('fileInputGaleria').click();
 });
 
-// El monto de la venta se pide antes de escanear (primera vez y cada
+// El monto a cobrar se pide antes de escanear (primera vez y cada
 // "Escanear otro") SOLO si el admin configuro este perfil en modo 'monto'
 // (ver CONFIG.MODO_ESCANEO) -- sin esto, un comprobante real pero por un
-// valor menor al de la venta (ej. una transferencia de $0.01 a la cuenta
+// valor menor al cobro esperado (ej. una transferencia de $0.01 a la cuenta
 // correcta) pasaba como valido porque nada obligaba a comparar contra lo
 // que se estaba cobrando. En modo 'directo' se escanea sin pedir nada,
 // como antes -- decision del admin, no algo forzado para todos los clientes.
@@ -1550,8 +1550,8 @@ async function confirmarConServidor(datos, resultadoLocal){
     };
   }catch(e){
     // Sin conexion: no se puede verificar que el comprobante no este
-    // repetido. No se bloquea la venta (el negocio tiene que poder seguir
-    // vendiendo offline), pero se avisa -- con toast INMEDIATO ademas del
+    // repetido. No se bloquea el cobro (el negocio tiene que poder seguir
+    // operando offline), pero se avisa -- con toast INMEDIATO ademas del
     // motivo que ya queda escrito en la pantalla de resultado -- en vez
     // de degradar en silencio.
     console.log('[DIAG confirmar] confirmarConServidor() fallo tras', Math.round(performance.now()-t0), 'ms ->',
@@ -1593,14 +1593,14 @@ function validarLocal(d, montoEsperado){
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
     m.push('El beneficiario no es '+(CONFIG.NOMBRE_NEGOCIO||'el del negocio')+' (el comprobante dice: "'+(d.beneficiario||'—')+'").');
-  // El monto de la venta solo se exige en modo 'monto' (ver mostrarMontoGate
+  // El monto a cobrar solo se exige en modo 'monto' (ver mostrarMontoGate
   // y CONFIG.MODO_ESCANEO) -- en 'directo' el admin elegio no pedirlo, y el
   // comprobante se acepta sin comparar montos.
   if(CONFIG.MODO_ESCANEO!=='directo'){
     if(!(Number(montoEsperado)>0))
-      m.push('No se ingresó el monto de la venta antes de escanear.');
+      m.push('No se ingresó el monto a cobrar antes de escanear.');
     else if(Math.abs(Number(d.monto)-Number(montoEsperado))>0.001)
-      m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto de la venta ($'+Number(montoEsperado).toFixed(2)+').');
+      m.push('El monto del comprobante ($'+(Number(d.monto)||0).toFixed(2)+') no coincide con el monto a cobrar ($'+Number(montoEsperado).toFixed(2)+').');
   }
   if(!(Number(d.monto)>0))
     m.push('El monto del QR no es válido.');
@@ -1619,8 +1619,8 @@ function validarLocal(d, montoEsperado){
 
   // El QR del banco NO trae la hora real de la transferencia -- trae la
   // medianoche (hora Ecuador) del dia en que se hizo. Comparar en HORAS
-  // contra Date.now() (como se hacia antes) es un error de raiz: una venta
-  // de esta misma tarde aparece "hecha hace 14 horas" solo porque se mide
+  // contra Date.now() (como se hacia antes) es un error de raiz: un cobro
+  // de esta misma tarde aparece "hecho hace 14 horas" solo porque se mide
   // desde la medianoche, no desde el momento real -- confirmado escaneando
   // dos comprobantes reales del dia anterior y de 4 dias antes, los dos con
   // el timestamp exacto en 00:00:00 Ecuador.
@@ -1848,9 +1848,9 @@ function reanudar(){
     // escaneando de forma continua, sin cortes entre un comprobante y otro.
     return;
   }
-  // En modo 'monto' sí se suelta la camara mientras se pide el monto de la
-  // proxima venta (no se reusa el monto anterior, para no aceptar por
-  // descuido una venta distinta con el monto de la venta previa).
+  // En modo 'monto' sí se suelta la camara mientras se pide el monto del
+  // proximo cobro (no se reusa el monto anterior, para no aceptar por
+  // descuido un cobro distinto con el monto del cobro previo).
   detenerCamara();
   $('scanUi').classList.remove('on');
   comenzarEscaneo(0);
