@@ -373,6 +373,7 @@ canvas{display:none}
   <div class="side-controls">
     <button class="side-btn pressable" id="btnZoom" style="display:none">🔍 Zoom</button>
     <button class="side-btn pressable" id="btnLuz" style="display:none">💡 Luz</button>
+    <button class="side-btn pressable" id="btnGaleria">🖼️ Subir foto</button>
   </div>
   <div class="status">
     <span class="pill"><span class="d"></span><span id="statusText">Buscando código…</span></span>
@@ -382,6 +383,13 @@ canvas{display:none}
 </div>
 
 <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none">
+<!-- Sin `capture`: a diferencia de fileInput (que fuerza la camara nativa,
+     plan B cuando la lectura en vivo no anda), este abre el selector
+     normal del sistema -- el usuario puede elegir una foto YA existente
+     de la galeria (ej. un comprobante que le llego por WhatsApp), no
+     tomar una nueva. Misma logica de decodificado/validacion de siempre,
+     ver procesarImagenSeleccionada(). -->
+<input type="file" id="fileInputGaleria" accept="image/*" style="display:none">
 
 <div class="camrestart" id="camRestart">
   <div class="skeleton vs-badge"></div>
@@ -895,9 +903,12 @@ addEventListener('orientationchange', ajustarCamView);
 
 // Cover-fit manual (equivalente a object-fit:cover, pero calculado a mano
 // porque #video ya no es lo que se ve): llena innerWidth x innerHeight
-// recortando lo que sobra del video nativo, sin deformarlo.
-function calcularCoverFit(vw, vh, sw, sh){
-  const escala=Math.max(sw/vw, sh/vh);
+// recortando lo que sobra del video nativo, sin deformarlo. `zoom` (>=1)
+// agranda la escala mas alla del cover-fit base -- dibujar mas grande que
+// el canvas visible recorta visualmente el centro, mismo efecto que un
+// zoom digital, sin tocar el video nativo ni el decodificado.
+function calcularCoverFit(vw, vh, sw, sh, zoom){
+  const escala=Math.max(sw/vw, sh/vh)*(zoom||1);
   const dw=vw*escala, dh=vh*escala;
   return { escala, dw, dh, dx:(sw-dw)/2, dy:(sh-dh)/2 };
 }
@@ -921,7 +932,7 @@ function dibujarLoop(){
     // tumbar el loop de camara.
     try{
       const vw=video.videoWidth, vh=video.videoHeight;
-      const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight);
+      const fit=calcularCoverFit(vw, vh, innerWidth, innerHeight, zoomDigital);
       camCtx.drawImage(video, fit.dx, fit.dy, fit.dw, fit.dh);
     }catch(e){
       console.error('[camView] Error dibujando el frame de camara, se ignora este frame:', e);
@@ -1062,6 +1073,14 @@ $('btnFoto').addEventListener('click', ()=>{
   $('fileInput').value='';
   $('fileInput').click();
 });
+$('btnGaleria').addEventListener('click', ()=>{
+  // Mismo motivo que btnFoto: soltar la camara en vivo antes de abrir el
+  // selector, si no en iOS la pantalla queda en negro y el picker no
+  // responde.
+  detenerCamara();
+  $('fileInputGaleria').value='';
+  $('fileInputGaleria').click();
+});
 
 // El monto de la venta se pide antes de escanear (primera vez y cada
 // "Escanear otro") SOLO si el admin configuro este perfil en modo 'monto'
@@ -1198,24 +1217,26 @@ async function reiniciarCamara(){
   }
 }
 
-// Zoom optico/de sensor (mas comun en Android; en iPhone Safari normalmente
-// no esta disponible) y linterna, si el celular las soporta via navegador.
-// El zoom arranca bajo por defecto -- el boton "Zoom" activa uno mas fuerte
-// (el nivel que antes era el default) para cuando de verdad haga falta.
-let zoomCaps=null, zoomAlto=false, torchOn=false, torchCaps=false;
+// Zoom optico/de sensor, si el celular lo soporta via navegador (track.
+// getCapabilities().zoom) -- variaba entre plataformas y hasta entre
+// versiones de WebView de un mismo Android, asi que el boton "Zoom" ya
+// NO depende de que esa capacidad este presente: siempre se muestra, y
+// SIEMPRE aplica zoom digital (recorte + escala en el propio dibujo del
+// canvas, ver dibujarLoop/calcularCoverFit) ademas de intentar el optico
+// de verdad cuando existe -- si el optico no esta disponible, el digital
+// solo no lo reemplaza del todo pero sigue siendo un zoom real y visible.
+// Linterna si el celular la soporta via navegador (no tiene fallback
+// posible, sigue condicionada a la capacidad real).
+let zoomCaps=null, zoomAlto=false, zoomDigital=1, torchOn=false, torchCaps=false;
 function detectarCapacidadesCamara(){
-  zoomCaps=null; zoomAlto=false; torchOn=false; torchCaps=false;
-  $('btnZoom').style.display='none';
+  zoomCaps=null; zoomAlto=false; zoomDigital=1; torchOn=false; torchCaps=false;
+  $('btnZoom').style.display='inline-flex';
+  $('btnZoom').textContent='🔍 Zoom';
   $('btnLuz').style.display='none';
   try{
     const track=stream.getVideoTracks()[0];
     const cap=track.getCapabilities && track.getCapabilities();
-    if(cap && cap.zoom){
-      zoomCaps=cap.zoom;
-      $('btnZoom').style.display='inline-flex';
-      $('btnZoom').textContent='🔍 Zoom';
-      aplicarNivelZoom(false);
-    }
+    if(cap && cap.zoom) zoomCaps=cap.zoom;
     if(cap && cap.torch){
       torchCaps=true;
       $('btnLuz').style.display='inline-flex';
@@ -1224,13 +1245,17 @@ function detectarCapacidadesCamara(){
   }catch(e){}
 }
 function aplicarNivelZoom(alto){
+  // Digital: siempre aplica, sin importar la plataforma (ver dibujarLoop).
+  // Sin zoom por defecto para que el lector reconozca el QR en cualquier
+  // parte de la pantalla, no solo dentro del cuadro guia -- el zoom fuerte
+  // solo se aplica si el usuario lo pide con el boton (QR chico o lejos).
+  zoomDigital = alto ? 1.8 : 1;
+  // Optico: bonus cuando el navegador de verdad lo soporta -- si no, el
+  // catch lo deja pasar en silencio y el digital de arriba sigue siendo el
+  // zoom real que ve el usuario.
   if(!stream || !zoomCaps) return;
   const track=stream.getVideoTracks()[0];
   const rango=zoomCaps.max-zoomCaps.min;
-  // Sin zoom por defecto: la camara capta su campo de vision completo, para
-  // que el lector reconozca el QR en cualquier parte de la pantalla (no solo
-  // dentro del cuadro guia). El zoom fuerte solo se aplica si el usuario lo
-  // pide con el boton (QR chico o lejos).
   const z=alto ? Math.min(zoomCaps.max, Math.max(zoomCaps.min, zoomCaps.min+rango/2.2)) : zoomCaps.min;
   track.applyConstraints({advanced:[{zoom:z}]}).catch(()=>{});
 }
@@ -1317,8 +1342,11 @@ function imagenADataUrl(img, maxW){
   return c.toDataURL('image/jpeg',0.6);
 }
 
-$('fileInput').addEventListener('change', e=>{
-  const file=e.target.files[0];
+// Comun a fileInput (foto nueva, camara nativa) y fileInputGaleria (foto ya
+// existente, ej. un comprobante recibido por WhatsApp) -- misma
+// decodificacion y el mismo onScan() de siempre, sin ninguna diferencia en
+// la logica de validacion entre subir una foto vieja o tomar una nueva.
+function procesarImagenSeleccionada(file){
   if(!file){ iniciarCamara(); return; } // cancelo el picker -> vuelve al modo en vivo
   const img=new Image();
   img.onload=()=>{
@@ -1333,7 +1361,9 @@ $('fileInput').addEventListener('change', e=>{
   };
   img.onerror=()=>{ $('statusText').textContent='No se pudo leer la foto. Intenta de nuevo.'; iniciarCamara(); };
   img.src=URL.createObjectURL(file);
-});
+}
+$('fileInput').addEventListener('change', e=>{ procesarImagenSeleccionada(e.target.files[0]); });
+$('fileInputGaleria').addEventListener('change', e=>{ procesarImagenSeleccionada(e.target.files[0]); });
 
 // El recorte central (zoom digital) ya no tiene su propio timer -- ahora
 // es decodificarQRRecortado(), llamado DENTRO del mismo turno de
