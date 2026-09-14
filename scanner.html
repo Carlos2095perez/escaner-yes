@@ -260,19 +260,45 @@ canvas{display:none}
   background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
 .pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
+.pc-buscador{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:16px;padding:14px;margin-bottom:12px}
+.pc-search-wrap{position:relative;margin-bottom:8px}
+.pc-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
+.pc-search-wrap input{width:100%;padding:10px 12px 10px 36px}
+.pc-autocomplete{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:5;background:var(--ink);
+  border:1px solid var(--azul-70);border-radius:10px;overflow-y:auto;max-height:200px;box-shadow:0 14px 28px -10px rgba(0,0,0,.55)}
+.pc-autocomplete-item{pointer-events:auto;padding:10px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.07)}
+.pc-autocomplete-item:last-child{border-bottom:0}
+.pc-autocomplete-item:hover,.pc-autocomplete-item:active{background:rgba(255,255,255,.08)}
 .pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.pc-filtro:last-child{margin-bottom:0}
 .pc-filtro input,.pc-filtro select{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
   border:1px solid var(--azul-70);background:rgba(255,255,255,.06);color:#fff;font-family:var(--inter)}
 .pc-filtro select{min-width:130px}
 .pc-filtro input::placeholder{color:var(--muted)}
-.pc-mov-row{padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
+.pc-btn-primary{pointer-events:auto;flex:1;font-family:var(--sora);font-weight:700;font-size:13px;color:#fff;
+  background:var(--violeta);border:1px solid var(--violeta);padding:10px 14px;border-radius:999px;cursor:pointer}
+.pc-btn-primary:active{transform:scale(.97)}
+.pc-btn-ghost{pointer-events:auto;flex:1;font-family:var(--sora);font-weight:600;font-size:13px;color:var(--muted);
+  background:transparent;border:1px solid var(--azul-70);padding:10px 14px;border-radius:999px;cursor:pointer}
+.pc-btn-ghost:active{transform:scale(.97)}
+.pc-resumen{display:flex;gap:8px;margin-bottom:14px}
+.pc-resumen .item{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:12px;padding:10px;text-align:center}
+.pc-resumen .item .n{font-family:var(--sora);font-weight:700;font-size:15px}
+.pc-resumen .item .l{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.03em}
+.pc-mov-row{padding:9px 0 9px 10px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09);border-left:3px solid transparent}
 .pc-mov-row:last-child{border-bottom:0}
+.pc-mov-row.ok{border-left-color:var(--green)}
+.pc-mov-row.warn{border-left-color:var(--amber)}
+.pc-mov-row.bad{border-left-color:var(--red)}
+.pc-mov-row.dup{border-left-color:var(--azul-70)}
 .pc-mov-linea{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
 .pc-mov-txt{flex:1;text-align:left}
 .pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
 .pc-mov-monto.ok{color:var(--green-hi)}
-.pc-mov-monto.no{color:#ff9aa4}
+.pc-mov-monto.warn{color:var(--amber-hi)}
+.pc-mov-monto.bad{color:#ff9aa4}
+.pc-mov-monto.dup{color:var(--muted)}
 .pc-mov-detalle{margin-top:3px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
 .pc-diag{margin-top:16px}
@@ -310,7 +336,14 @@ canvas{display:none}
   .pc-mov-detalle{color:#5A6076}
   .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
   .pc-chart-label{fill:rgba(10,22,61,.55)}
-  .pc-filtro input,.pc-filtro select{background:#fff;border-color:#E4E7F0;color:#0A163D}
+  .pc-buscador{background:#fff;border-color:#E4E7F0}
+  .pc-filtro input,.pc-filtro select{background:#F5F6FA;border-color:#E4E7F0;color:#0A163D}
+  .pc-autocomplete{background:#fff;border-color:#E4E7F0;box-shadow:0 14px 28px -10px rgba(10,22,61,.18)}
+  .pc-autocomplete-item{border-bottom-color:#EEF0F5}
+  .pc-autocomplete-item:hover,.pc-autocomplete-item:active{background:#F5F6FA}
+  .pc-btn-ghost{color:#5A6076;border-color:#E4E7F0}
+  .pc-resumen .item{background:#fff;border-color:#E4E7F0}
+  .pc-resumen .item .n{color:#0A163D}
 }
 </style>
 </head>
@@ -429,26 +462,33 @@ canvas{display:none}
     <div class="pc-movs-head">
       <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
     </div>
-    <div class="pc-filtro">
-      <input type="text" id="pcBuscarTexto" placeholder="Buscar por N° comprobante o nombre del cliente" style="min-width:100%">
+    <div class="pc-buscador">
+      <div class="pc-search-wrap">
+        <svg class="pc-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+        <input type="text" id="pcBuscarTexto" placeholder="Buscar por comprobante o nombre del cliente" autocomplete="off">
+        <div class="pc-autocomplete" id="pcAutocomplete" hidden></div>
+      </div>
+      <div class="pc-filtro">
+        <input type="date" id="pcDesde">
+        <input type="date" id="pcHasta">
+      </div>
+      <div class="pc-filtro">
+        <select id="pcFiltroVeredicto">
+          <option value="">Todos los estados</option>
+          <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
+          <option value="ALERTA">Alertas</option>
+          <option value="RECHAZADO">Rechazados</option>
+          <option value="DUPLICADO">Duplicados</option>
+        </select>
+      </div>
+      <div class="pc-filtro">
+        <button class="pc-btn-primary pressable" id="btnPcBuscar">Buscar</button>
+        <button class="pc-btn-ghost pressable" id="btnPcLimpiar">Limpiar filtros</button>
+      </div>
     </div>
-    <div class="pc-filtro">
-      <input type="date" id="pcDesde">
-      <input type="date" id="pcHasta">
-    </div>
-    <div class="pc-filtro">
-      <select id="pcFiltroVeredicto">
-        <option value="">Todos los estados</option>
-        <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
-        <option value="ALERTA">Alertas</option>
-        <option value="RECHAZADO">Rechazados</option>
-        <option value="DUPLICADO">Duplicados</option>
-      </select>
-    </div>
-    <div class="pc-filtro">
-      <button class="pc-mini-btn pressable" id="btnPcBuscar" style="flex:1">Buscar</button>
-      <button class="pc-mini-btn pressable" id="btnPcLimpiar" style="flex:1">Limpiar filtros</button>
-    </div>
+
+    <div class="pc-resumen" id="pcResumenFiltro" hidden></div>
+
     <div class="pc-movs-botones" style="margin-bottom:12px">
       <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
       <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
@@ -1832,17 +1872,41 @@ function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><d
 // Ordenante (quien pago) + comprobante son la forma real de "identificar"
 // un movimiento -- antes la fila solo mostraba hora/veredicto/monto,
 // indistinguible de cualquier otra.
+// Estado visual de cada fila (color del borde/monto) -- las 4 categorias
+// del filtro de estado, no solo aceptado/no-aceptado.
+function estadoMovCss(veredicto){
+  if(veredicto==='PENDIENTE_CONCILIACION') return 'ok';
+  if(veredicto==='ALERTA') return 'warn';
+  if(veredicto==='DUPLICADO') return 'dup';
+  return 'bad'; // RECHAZADO y cualquier otro
+}
+
 function renderMovimientos(movs, mensajeVacio){
   if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
   $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
-    const ok=ACEPTADOS_PC.includes(m.veredicto);
+    const estado=estadoMovCss(m.veredicto);
     const hora=formatearFechaEC(m.fecha, true);
     const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null].filter(Boolean).map(escapeHtml).join(' · ');
-    return '<div class="pc-mov-row"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
+    return '<div class="pc-mov-row '+estado+'"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
       '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
-      '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
+      '<span class="pc-mov-monto '+estado+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
       (detalle?'<div class="pc-mov-detalle">'+detalle+'</div>':'')+'</div>';
   }).join('');
+}
+
+// Total de lo que esta viendo AHORA (el rango/filtro activo), no solo de
+// hoy -- antes filtrar no mostraba ninguna suma, el usuario tenia que
+// contar a mano.
+function renderResumenFiltro(movs){
+  const el=$('pcResumenFiltro');
+  if(!movs || !movs.length){ el.hidden=true; el.innerHTML=''; return; }
+  let monto=0, aceptados=0;
+  movs.forEach(m=>{ if(ACEPTADOS_PC.includes(m.veredicto)){ aceptados++; if(m.monto) monto+=Number(m.monto); } });
+  el.hidden=false;
+  el.innerHTML =
+    '<div class="item"><div class="n">'+movs.length+'</div><div class="l">Movimientos</div></div>'+
+    '<div class="item"><div class="n">$'+monto.toFixed(2)+'</div><div class="l">Total cobrado</div></div>'+
+    '<div class="item"><div class="n">'+aceptados+'</div><div class="l">Aceptados</div></div>';
 }
 
 // Grafico de barras (SVG, sin librerias) del dinero cobrado en los ultimos 7 dias.
@@ -1914,10 +1978,48 @@ async function abrirCuenta(){
 
     movimientosMostrados = d.movimientosHoy || [];
     renderMovimientos(movimientosMostrados);
+    renderResumenFiltro(movimientosMostrados);
   }catch(e){
     $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
   }
 }
+
+// Autocompletado del buscador: sugiere nombres de cliente ya vistos en los
+// propios escaneos (GET /api/account/clientes), para no depender de
+// escribir el nombre exacto sin ningun typo.
+let autocompleteTimer=null;
+function ocultarAutocomplete(){ const el=$('pcAutocomplete'); el.hidden=true; el.innerHTML=''; }
+async function buscarAutocomplete(texto){
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) return;
+    const res=await fetch(NUVO_API+'/api/account/clientes?q='+encodeURIComponent(texto), { headers:{ Authorization:'Bearer '+session.access_token } });
+    if(!res.ok) return;
+    const d=await res.json();
+    const clientes=d.clientes||[];
+    if(!clientes.length){ ocultarAutocomplete(); return; }
+    const el=$('pcAutocomplete');
+    el.innerHTML=clientes.map(nombre=>'<div class="pc-autocomplete-item">'+escapeHtml(nombre)+'</div>').join('');
+    el.hidden=false;
+    Array.from(el.children).forEach((item,i)=>{
+      // mousedown (no click) dispara ANTES del blur del input -- si no,
+      // el dropdown se esconde por el blur antes de registrar el click.
+      item.addEventListener('mousedown', e=>{
+        e.preventDefault();
+        $('pcBuscarTexto').value=clientes[i];
+        ocultarAutocomplete();
+        buscarMovimientos();
+      });
+    });
+  }catch(e){ /* el autocompletado nunca bloquea la busqueda si falla */ }
+}
+$('pcBuscarTexto').addEventListener('input', ()=>{
+  clearTimeout(autocompleteTimer);
+  const texto=$('pcBuscarTexto').value.trim();
+  if(texto.length<2){ ocultarAutocomplete(); return; }
+  autocompleteTimer=setTimeout(()=>buscarAutocomplete(texto), 300);
+});
+$('pcBuscarTexto').addEventListener('blur', ()=>{ setTimeout(ocultarAutocomplete, 150); });
 
 $('btnPcBuscar').addEventListener('click', buscarMovimientos);
 $('btnPcLimpiar').addEventListener('click', ()=>{
@@ -1925,9 +2027,10 @@ $('btnPcLimpiar').addEventListener('click', ()=>{
   $('pcFiltroVeredicto').value='';
   $('pcDesde').value=hoyISOClient();
   $('pcHasta').value=hoyISOClient();
+  ocultarAutocomplete();
   buscarMovimientos();
 });
-$('pcBuscarTexto').addEventListener('keydown', e=>{ if(e.key==='Enter') buscarMovimientos(); });
+$('pcBuscarTexto').addEventListener('keydown', e=>{ if(e.key==='Enter'){ ocultarAutocomplete(); buscarMovimientos(); } });
 
 async function buscarMovimientos(){
   const desde=$('pcDesde').value, hasta=$('pcHasta').value;
@@ -1948,8 +2051,10 @@ async function buscarMovimientos(){
     if(!res.ok) throw new Error(d.error||'Error');
     movimientosMostrados = d.movimientosRango || [];
     renderMovimientos(movimientosMostrados, hayFiltros ? 'No se encontraron movimientos con esos filtros.' : 'No hay movimientos en ese rango.');
+    renderResumenFiltro(movimientosMostrados);
   }catch(e){
     $('pcMovs').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
+    $('pcResumenFiltro').hidden=true;
   }
 }
 
