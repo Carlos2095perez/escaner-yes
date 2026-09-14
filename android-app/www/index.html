@@ -260,16 +260,20 @@ canvas{display:none}
   background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
 .pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
-.pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-.pc-filtro input{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
+.pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.pc-filtro input,.pc-filtro select{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
   border:1px solid var(--azul-70);background:rgba(255,255,255,.06);color:#fff;font-family:var(--inter)}
-.pc-mov-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
+.pc-filtro select{min-width:130px}
+.pc-filtro input::placeholder{color:var(--muted)}
+.pc-mov-row{padding:9px 0;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09)}
 .pc-mov-row:last-child{border-bottom:0}
+.pc-mov-linea{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
 .pc-mov-txt{flex:1;text-align:left}
 .pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
 .pc-mov-monto.ok{color:var(--green-hi)}
 .pc-mov-monto.no{color:#ff9aa4}
+.pc-mov-detalle{margin-top:3px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
 .pc-diag{margin-top:16px}
 .pc-diag-texto{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;
@@ -303,9 +307,10 @@ canvas{display:none}
   .pc-chart-title{color:#5A6076}
   .pc-mov-row{border-bottom-color:#E4E7F0}
   .pc-mov-hora,.pc-mov-txt{color:#0A163D}
+  .pc-mov-detalle{color:#5A6076}
   .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
   .pc-chart-label{fill:rgba(10,22,61,.55)}
-  .pc-filtro input{background:#fff;border-color:#E4E7F0;color:#0A163D}
+  .pc-filtro input,.pc-filtro select{background:#fff;border-color:#E4E7F0;color:#0A163D}
 }
 </style>
 </head>
@@ -425,9 +430,25 @@ canvas{display:none}
       <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
     </div>
     <div class="pc-filtro">
+      <input type="text" id="pcBuscarTexto" placeholder="Buscar por N° comprobante o nombre del cliente" style="min-width:100%">
+    </div>
+    <div class="pc-filtro">
       <input type="date" id="pcDesde">
       <input type="date" id="pcHasta">
-      <button class="pc-mini-btn pressable" id="btnPcBuscar">Buscar</button>
+    </div>
+    <div class="pc-filtro">
+      <select id="pcFiltroVendedor"><option value="">Todos los vendedores</option></select>
+      <select id="pcFiltroVeredicto">
+        <option value="">Todos los estados</option>
+        <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
+        <option value="ALERTA">Alertas</option>
+        <option value="RECHAZADO">Rechazados</option>
+        <option value="DUPLICADO">Duplicados</option>
+      </select>
+    </div>
+    <div class="pc-filtro">
+      <button class="pc-mini-btn pressable" id="btnPcBuscar" style="flex:1">Buscar</button>
+      <button class="pc-mini-btn pressable" id="btnPcLimpiar" style="flex:1">Limpiar filtros</button>
     </div>
     <div class="pc-movs-botones" style="margin-bottom:12px">
       <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
@@ -453,6 +474,12 @@ const RE_HASH=/^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
 const CHECK='M14 27 l8 8 l16 -18', CROSS='M17 17 L35 35 M35 17 L17 35', DUP='M26 13 L26 31 M26 39 L26 39.1';
 const $=id=>document.getElementById(id);
+// Escapa texto que viene del QR/backend (ordenante, comprobante) antes de
+// meterlo en innerHTML -- son datos externos (el contenido del QR bancario),
+// no texto propio de la app.
+function escapeHtml(s){
+  return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 // Unica fuente de verdad para mostrar una fecha/hora al usuario. El bug real
 // no era el almacenamiento (creado_en es timestamptz, correcto) sino que
 // toLocaleString('es-EC') sin `timeZone` usa la zona del DISPOSITIVO que
@@ -1807,14 +1834,21 @@ let ultimoDashboard = {};
 
 function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
 
-function renderMovimientos(movs){
-  if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">Todavía no has escaneado nada hoy.</div>'; return; }
+// Vendedor (V.-quien-opera) + ordenante (quien pago) + comprobante son la
+// unica forma real de "identificar" un movimiento -- antes la fila solo
+// mostraba hora/veredicto/monto, indistinguible de cualquier otra.
+function nombreVendedor(codigo){ return codigo ? (VEND[codigo]||codigo) : null; }
+
+function renderMovimientos(movs, mensajeVacio){
+  if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
   $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
     const ok=ACEPTADOS_PC.includes(m.veredicto);
     const hora=formatearFechaEC(m.fecha, true);
-    return '<div class="pc-mov-row"><span class="pc-mov-hora">'+hora+'</span>'+
+    const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null, nombreVendedor(m.vendedor)].filter(Boolean).map(escapeHtml).join(' · ');
+    return '<div class="pc-mov-row"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
       '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
-      '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>';
+      '<span class="pc-mov-monto '+(ok?'ok':'no')+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
+      (detalle?'<div class="pc-mov-detalle">'+detalle+'</div>':'')+'</div>';
   }).join('');
 }
 
@@ -1892,21 +1926,47 @@ async function abrirCuenta(){
   }
 }
 
+// Select de vendedor se llena una sola vez con el mismo VEND que ya usa el
+// resto de la app (identificar quien vendio es parte del punto de este
+// buscador) -- no depende de datos del backend.
+Object.keys(VEND).forEach(codigo=>{
+  const opt=document.createElement('option');
+  opt.value=codigo; opt.textContent=VEND[codigo];
+  $('pcFiltroVendedor').appendChild(opt);
+});
+
 $('btnPcBuscar').addEventListener('click', buscarMovimientos);
+$('btnPcLimpiar').addEventListener('click', ()=>{
+  $('pcBuscarTexto').value='';
+  $('pcFiltroVendedor').value='';
+  $('pcFiltroVeredicto').value='';
+  $('pcDesde').value=hoyISOClient();
+  $('pcHasta').value=hoyISOClient();
+  buscarMovimientos();
+});
+$('pcBuscarTexto').addEventListener('keydown', e=>{ if(e.key==='Enter') buscarMovimientos(); });
 
 async function buscarMovimientos(){
   const desde=$('pcDesde').value, hasta=$('pcHasta').value;
   if(!desde || !hasta) return;
+  const texto=$('pcBuscarTexto').value.trim();
+  const vendedor=$('pcFiltroVendedor').value;
+  const veredicto=$('pcFiltroVeredicto').value;
+  const hayFiltros = Boolean(texto || vendedor || veredicto);
   $('pcMovs').innerHTML='<div class="pc-mov-vacio">Buscando...</div>';
-  $('pcMovsTitulo').textContent = desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango';
+  $('pcMovsTitulo').textContent = (desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango') + (hayFiltros?' · filtrado':'');
   try{
     const { data:{ session } } = await sbc.auth.getSession();
     if(!session) throw new Error('sin sesion');
-    const res=await fetch(NUVO_API+'/api/account/dashboard?desde='+desde+'&hasta='+hasta, { headers:{ Authorization:'Bearer '+session.access_token } });
+    const qs=new URLSearchParams({ desde, hasta });
+    if(texto) qs.set('q', texto);
+    if(vendedor) qs.set('vendedor', vendedor);
+    if(veredicto) qs.set('veredicto', veredicto);
+    const res=await fetch(NUVO_API+'/api/account/dashboard?'+qs.toString(), { headers:{ Authorization:'Bearer '+session.access_token } });
     const d=await res.json();
     if(!res.ok) throw new Error(d.error||'Error');
     movimientosMostrados = d.movimientosRango || [];
-    renderMovimientos(movimientosMostrados);
+    renderMovimientos(movimientosMostrados, hayFiltros ? 'No se encontraron movimientos con esos filtros.' : 'No hay movimientos en ese rango.');
   }catch(e){
     $('pcMovs').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
   }
@@ -1945,13 +2005,16 @@ $('btnPcPdf').addEventListener('click', () => {
 
     doc.autoTable({
       startY: 47,
-      head: [['Fecha','Veredicto','Monto']],
+      head: [['Fecha','Cliente','N° comprobante','Vendedor','Veredicto','Monto']],
       body: movs.map(m=>[
         formatearFechaEC(m.fecha),
+        m.ordenante||'—',
+        m.comprobante||'—',
+        nombreVendedor(m.vendedor)||'—',
         VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
         m.monto?'$'+Number(m.monto).toFixed(2):'—',
       ]),
-      headStyles:{fillColor:[10,22,61]}, styles:{fontSize:9},
+      headStyles:{fillColor:[10,22,61]}, styles:{fontSize:8},
       didParseCell: function(data){
         if(data.section!=='body') return;
         const ok = ACEPTADOS_PC.includes(movs[data.row.index].veredicto);
@@ -1971,12 +2034,15 @@ $('btnPcExcel').addEventListener('click', () => {
     const desde=$('pcDesde').value, hasta=$('pcHasta').value;
     const filas = movs.map(m=>({
       Fecha: formatearFechaEC(m.fecha),
+      Cliente: m.ordenante||'',
+      'N° comprobante': m.comprobante||'',
+      Vendedor: nombreVendedor(m.vendedor)||'',
       Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
       Monto: m.monto?Number(m.monto):'',
     }));
     const wb=XLSX.utils.book_new();
     const ws=XLSX.utils.json_to_sheet(filas);
-    ws['!cols']=[{wch:16},{wch:20},{wch:10}];
+    ws['!cols']=[{wch:16},{wch:24},{wch:16},{wch:18},{wch:20},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, 'Movimientos');
     XLSX.writeFile(wb, 'mis-movimientos_'+desde+'_a_'+hasta+'.xlsx');
   }catch(e){ toast('No se pudo generar el Excel: '+e.message, 'error'); }
