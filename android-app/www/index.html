@@ -164,12 +164,12 @@ canvas{display:none}
 /* Duplicado (comprobante legitimo pero repetido) NO es lo mismo que
    rechazado (comprobante invalido/posible fraude): comparten el mismo
    rojo hoy y el operario no puede distinguirlos de un vistazo. Ambar
-   propio + icono propio para "revisar", en vez del rojo de "no despachar". */
+   propio + icono propio para "revisar", en vez del rojo de "no continuar". */
 .result.dup{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
 /* ALERTA (aceptado con advertencia -- comprobante viejo, o la
    confirmacion de unicidad con el servidor no se pudo hacer) usaba el
    mismo verde/confetti/audio que un aceptado limpio: eso le decia al
-   operario "despachá tranquilo" cuando en realidad hay algo sin
+   operario "seguí tranquilo" cuando en realidad hay algo sin
    verificar. Mismo ambar que duplicado, icono de check (sigue siendo,
    probablemente, un comprobante valido -- solo que no 100% verificado). */
 .result.warn{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
@@ -198,7 +198,7 @@ canvas{display:none}
 .result.dup .rlabel{color:var(--amber-hi)}
 .amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
 /* En rechazo/duplicado no hay monto que mostrar: este texto (el motivo
-   corto, ej. "No despachar") ES el veredicto -- tiene que leerse tan
+   corto, ej. "No continuar") ES el veredicto -- tiene que leerse tan
    grande como el monto en el caso aceptado, no quedar chico. */
 .result.bad .amount,.result.dup .amount{font-size:46px;line-height:1.1}
 .card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
@@ -1459,7 +1459,7 @@ async function onScan(texto, fotoOverride){
     const r2=await registrarEscaneo(resultado, datos);
     guardado=r2.guardado;
     if(r2.duplicado){
-      resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
+      resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No continuar.'] };
     }
   }
 
@@ -1540,12 +1540,12 @@ async function confirmarConServidor(datos, resultadoLocal){
       '| body:', bodyTexto.slice(0,500));
     if(resp.ok){
       if(body.duplicado){
-        return { resultado:{ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] }, confirmadoServidor:true, fallo:false };
+        return { resultado:{ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No continuar.'] }, confirmadoServidor:true, fallo:false };
       }
       return { resultado:resultadoLocal, confirmadoServidor:true, fallo:false };
     }
     return {
-      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de despachar.']) },
+      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['No se pudo confirmar con el servidor que el comprobante es único. Revisar antes de continuar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'No se pudo confirmar con el servidor. Revisando en modo local.',
     };
   }catch(e){
@@ -1557,7 +1557,7 @@ async function confirmarConServidor(datos, resultadoLocal){
     console.log('[DIAG confirmar] confirmarConServidor() fallo tras', Math.round(performance.now()-t0), 'ms ->',
       'tipo:', e && e.name, '| mensaje:', e && e.message);
     return {
-      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de despachar.']) },
+      resultado:{ veredicto:'ALERTA', motivos:(resultadoLocal.motivos||[]).concat(['Sin conexión: no se pudo verificar que el comprobante no esté repetido. Revisar antes de continuar.']) },
       confirmadoServidor:false, fallo:true, mensajeError:'Sin conexión: no se pudo verificar que el comprobante no esté repetido.',
     };
   }
@@ -1575,7 +1575,7 @@ async function reintentarConfirmacion(datos, resultadoLocal){
     const r2=await registrarEscaneo(resultado, datos);
     guardado=r2.guardado;
     if(r2.duplicado){
-      resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No despachar.'] };
+      resultado={ veredicto:'DUPLICADO', motivos:['Este comprobante (N° '+datos.comprobante+') ya fue registrado antes. No continuar.'] };
     }
   }
   resultado.guardado=guardado;
@@ -1635,7 +1635,7 @@ function validarLocal(d, montoEsperado){
   const diasTranscurridos=Math.max(0, diaHoy-diaComprobante);
   if(diasTranscurridos>0){
     const etiqueta=diasTranscurridos===1?'ayer':diasTranscurridos+' días atrás';
-    return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. Revisar antes de despachar.']};
+    return {veredicto:'ALERTA', motivos:['El comprobante es del '+formatearFechaEC(ts,'fecha')+' ('+etiqueta+'), no de hoy. Revisar antes de continuar.']};
   }
 
   // Fecha futura: la "condicion de medianoche exacta" que se habia
@@ -1667,7 +1667,7 @@ function validarLocal(d, montoEsperado){
       limpio = siguienteHabil!==null && siguienteHabil===diaComprobante && diasAdelanto<=3;
     }
     if(!limpio){
-      return {veredicto:'ALERTA', motivos:['El comprobante tiene fecha futura: '+formatearFechaEC(ts,'fecha')+' ('+diasAdelanto+' día(s) adelante de hoy). Revisar antes de despachar.']};
+      return {veredicto:'ALERTA', motivos:['El comprobante tiene fecha futura: '+formatearFechaEC(ts,'fecha')+' ('+diasAdelanto+' día(s) adelante de hoy). Revisar antes de continuar.']};
     }
   }
 
@@ -1695,7 +1695,7 @@ function parsear(t){
 function mostrar(r,d){
   // ALERTA usaba el mismo "ok" que un aceptado limpio (PENDIENTE_CONCILIACION)
   // -- mismo verde, mismo confetti, mismo audio de exito. Eso le decia al
-  // operario "despachá tranquilo" en un caso donde algo NO se pudo
+  // operario "seguí tranquilo" en un caso donde algo NO se pudo
   // verificar (comprobante viejo, o unicidad no confirmada con el
   // servidor). "limpio" preserva exactamente el mismo criterio que antes
   // tenia "ok" para el caso realmente limpio (incluye r.ok, que
@@ -1706,7 +1706,7 @@ function mostrar(r,d){
   const ok=limpio||alerta;
   // Duplicado (comprobante legitimo, ya usado antes) es operativamente
   // distinto de rechazado (comprobante invalido) -- color e icono propios,
-  // no comparten el rojo de "no despachar" (ver clase .dup en el CSS).
+  // no comparten el rojo de "no continuar" (ver clase .dup en el CSS).
   const dup=!ok && r.veredicto==='DUPLICADO';
   const box=$('result'); box.className='result on '+(limpio?'ok':(alerta?'warn':(dup?'dup':'bad')));
   $('mark').innerHTML='<path d="'+(ok?CHECK:(dup?DUP:CROSS))+'"/>';
@@ -1736,7 +1736,7 @@ function mostrar(r,d){
     if(limpio) lanzarChispas();
     hablar(d, r);
   }else{
-    const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No despachar';
+    const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No continuar';
     $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
     $('ramount').textContent=titulo;
     $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
@@ -1827,9 +1827,9 @@ async function hablarRechazo(r, d){
   try{
     const montoTxt = (d && Number(d.monto)>0) ? (' El comprobante es por '+formatoMontoHablado(d.monto)+'.') : '';
     let t='Atención. ';
-    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No despachar.';
+    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No continuar.';
     else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
-    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No despachar.';
+    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No continuar.';
     decir(t);
   }catch(e){}
 }
