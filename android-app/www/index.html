@@ -24,6 +24,15 @@
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/core@6.2.1/dist/capacitor.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/filesystem@6.0.4/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@capacitor/share@6.0.4/dist/plugin.js"></script>
+<!-- Actualizaciones en vivo del contenido web (HTML/CSS/JS) SIN pasar por
+     Play Store ni reinstalar el APK -- ver actualizarAppNativa() mas abajo.
+     Modo manual (autoUpdate:false en capacitor.config.json): nosotros
+     controlamos el chequeo de version contra nuestro propio backend, no el
+     mecanismo automatico de Capgo -- asi no dependemos de replicar su
+     protocolo interno, solo de 3 metodos publicos y estables del plugin
+     (download/next/notifyAppReady). El APK nativo (con sus plugins Java,
+     como el de voz) NO cambia con esto -- solo cambia este archivo. -->
+<script src="https://cdn.jsdelivr.net/npm/@capgo/capacitor-updater@6.51.16/dist/plugin.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
@@ -655,6 +664,12 @@ $('gateMark').src = $('brandLogo').src;
 const NUVO_URL='https://yyqmqgqliecodwpgvkvb.supabase.co';
 const NUVO_ANON_KEY='sb_publishable_yIjlKoZBxA2MO7PvjZWNlg_vuKZ7Uz1';
 const NUVO_API='https://nuvo-validador-transferencias.vercel.app';
+// Chequeo de actualizacion en vivo apenas arranca el script -- ver
+// actualizarAppNativa() mas abajo (junto a esNativoAndroid()) para el
+// detalle. notifyAppReady() tiene que llamarse lo antes posible, antes de
+// cualquier otra llamada de red, por eso esta linea va aca arriba y no mas
+// abajo junto al resto del codigo de "Mi cuenta"/exportar.
+actualizarAppNativa();
 const sbc=supabase.createClient(NUVO_URL, NUVO_ANON_KEY);
 let correoActual='';
 let nombreUsuario='';
@@ -2058,6 +2073,54 @@ function cerrarCuenta(){
 
 function esNativoAndroid(){
   try{ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }catch(e){ return false; }
+}
+
+// Actualizaciones en vivo del contenido web (este mismo archivo, mas
+// manifest.json/styles.css/vendor/icons) SIN pasar por Play Store ni
+// reinstalar el APK -- @capgo/capacitor-updater en modo MANUAL
+// (autoUpdate:false en capacitor.config.json, ver ese archivo): nosotros
+// controlamos el chequeo, no el mecanismo automatico de Capgo. El servidor
+// es nuestro propio backend (un archivo estatico en Vercel, no consume
+// ninguna de las 12 funciones serverless del plan gratis -- ver
+// public/updates/latest.json en nuvo-validador-transferencias).
+//
+// Solo actualiza ESTE archivo y lo que vive en android-app/www/ -- un
+// cambio que toque codigo nativo (plugins Java nuevos, permisos nuevos,
+// subir version de Capacitor) sigue necesitando un APK nuevo como hasta
+// ahora; esto es para el resto (que es casi todo lo que se toca semana a
+// semana: UI, validacion, llamadas al backend).
+async function actualizarAppNativa(){
+  if(!esNativoAndroid()) return;
+  const CU=Capacitor.Plugins.CapacitorUpdater;
+  // CRITICO: hay que llamarlo en TODO arranque, antes de cualquier otra
+  // llamada de red (ver el await fetch de abajo) -- si no se llama a
+  // tiempo, el plugin asume que el bundle actual fallo y revierte solo al
+  // anterior.
+  try{ await CU.notifyAppReady(); }catch(e){}
+  try{
+    const res=await fetch(NUVO_API+'/updates/latest.json', { cache:'no-store' });
+    if(!res.ok) return;
+    const info=await res.json();
+    if(!info || !info.version || !info.url) return;
+
+    const [actual, siguiente]=await Promise.all([CU.current(), CU.getNextBundle()]);
+    const versionActiva=actual && actual.bundle && actual.bundle.version;
+    const versionEnCola=siguiente && siguiente.version;
+    // Ya esta al dia, o ya hay una descarga de esta misma version esperando
+    // a aplicarse -- no descargar de nuevo.
+    if(versionActiva===info.version || versionEnCola===info.version) return;
+
+    const bundle=await CU.download({ url:info.url, version:info.version });
+    // next() (no set()): no interrumpe el escaneo en curso -- se aplica
+    // solo, sin cortes, la proxima vez que la app pasa a segundo plano o
+    // se reabre.
+    await CU.next({ id:bundle.id });
+    console.log('[DIAG update] nueva version descargada y en cola:', info.version);
+  }catch(e){
+    // Nunca bloquea nada: sin conexion, o el backend caido, simplemente no
+    // hay actualizacion esta vez.
+    console.log('[DIAG update] chequeo de actualizacion fallo (no bloquea nada):', e && e.message);
+  }
 }
 
 // En la app nativa de Android, doc.save()/XLSX.writeFile() no hacen nada
