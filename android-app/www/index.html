@@ -98,18 +98,22 @@ canvas{display:none}
   border-radius:26px;border:2px solid rgba(255,255,255,.55)}
 
 /* Barra inferior fija (zoom, luz, subir foto): gradiente sutil de negro
-   transparente hacia arriba (no una barra solida) para que los iconos se
-   lean sobre cualquier imagen de fondo. Iconos monocromos finos (SVG,
-   stroke=currentColor), sin texto -- aria-label da la etiqueta accesible.
-   El estado activo (luz encendida, zoom aplicado) se marca con el color de
-   marca en el icono via `color`, nunca con fondo/borde. */
-.bottom-controls{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:center;
-  gap:36px;padding:26px 20px calc(env(safe-area-inset-bottom) + 18px);
-  background:linear-gradient(to top, rgba(0,0,0,.5), rgba(0,0,0,0));pointer-events:none}
-.bottom-btn{pointer-events:auto;width:48px;height:48px;display:flex;align-items:center;justify-content:center;
-  border:0;background:transparent;color:#fff;cursor:pointer;padding:0}
-.bottom-btn svg{width:24px;height:24px}
-.bottom-btn.active{color:var(--violeta)}
+   transparente hacia arriba (no una barra solida) para que los botones se
+   lean sobre cualquier imagen de fondo. Tres botones de TEXTO (no iconos --
+   un icono solo no dice que hace cada boton) del mismo ancho (flex:1, mismo
+   max-width), centrados como grupo. El estado activo (luz encendida, zoom
+   aplicado) se marca con fondo solido color de marca + sombra, no solo con
+   un cambio de color de texto -- mas facil de notar de un vistazo. */
+.bottom-controls{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:center;align-items:stretch;
+  gap:10px;padding:16px 18px calc(env(safe-area-inset-bottom) + 16px);
+  background:linear-gradient(to top, rgba(0,0,0,.55), rgba(0,0,0,0));pointer-events:none}
+.bottom-btn{pointer-events:auto;flex:1 1 0;max-width:150px;min-height:52px;display:flex;align-items:center;justify-content:center;
+  border:1.5px solid rgba(255,255,255,.32);border-radius:14px;background:rgba(20,20,30,.38);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  color:#fff;font-family:var(--sora);font-weight:700;font-size:12.5px;line-height:1.2;text-align:center;
+  cursor:pointer;padding:8px 6px;
+  transition:background .15s var(--ease-tap),border-color .15s var(--ease-tap),box-shadow .15s var(--ease-tap)}
+.bottom-btn.active{background:var(--violeta);border-color:var(--violeta);box-shadow:0 4px 16px -2px rgba(108,58,237,.65)}
 
 /* ---------- Activación ---------- */
 .gate{position:fixed;inset:0;z-index:6;background:radial-gradient(90% 55% at 50% 8%, rgba(155,107,255,.16), transparent 60%), var(--ink);
@@ -377,22 +381,9 @@ canvas{display:none}
   </div>
   <div class="frame"></div>
   <div class="bottom-controls">
-    <button class="bottom-btn pressable" id="btnZoom" style="display:none" aria-label="Zoom">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="10.5" cy="10.5" r="6.5"/><line x1="15.3" y1="15.3" x2="21" y2="21"/>
-        <line x1="10.5" y1="7.5" x2="10.5" y2="13.5"/><line x1="7.5" y1="10.5" x2="13.5" y2="10.5"/>
-      </svg>
-    </button>
-    <button class="bottom-btn pressable" id="btnLuz" style="display:none" aria-label="Linterna">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M9 3h6l-1 4h-4L9 3z"/><path d="M8 7h8v11a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V7z"/><line x1="10" y1="12" x2="14" y2="12"/>
-      </svg>
-    </button>
-    <button class="bottom-btn pressable" id="btnGaleria" aria-label="Subir foto">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10.5" r="1.5"/><path d="M21 15l-5-5-4 4-3-3-6 6"/>
-      </svg>
-    </button>
+    <button class="bottom-btn pressable" id="btnZoom" style="display:none" aria-label="Zoom">Zoom</button>
+    <button class="bottom-btn pressable" id="btnLuz" style="display:none" aria-label="Linterna">Linterna</button>
+    <button class="bottom-btn pressable" id="btnGaleria" aria-label="Subir comprobante">Subir<br>comprobante</button>
   </div>
 </div>
 
