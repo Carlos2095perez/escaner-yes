@@ -1351,8 +1351,21 @@ async function intentarDecodificar(){
 }
 
 // Decodifica una foto tomada con la camara nativa (mas confiable que el video en
-// vivo: usa el enfoque/flash propios del celular). Prueba a varias resoluciones.
-function decodificarImagen(img){
+// vivo: usa el enfoque/flash propios del celular). Prueba primero el mismo
+// detector nativo (BarcodeDetector/ML Kit) que ya usa la camara en vivo --
+// mucho mas robusto que jsQR solo con fotos reales (compresion de WhatsApp,
+// reflejos, QR chico dentro de una foto grande). Sin esto, "Subir
+// comprobante" usaba UNICAMENTE jsQR y fallaba con fotos que la camara en
+// vivo si lee, porque la camara en vivo si tiene el detector nativo. Si no
+// esta disponible o no encuentra nada, cae a los intentos de jsQR de
+// siempre a varias resoluciones.
+async function decodificarImagen(img){
+  if(barcodeDetector){
+    try{
+      const codigos=await barcodeDetector.detect(img);
+      if(codigos && codigos.length) return codigos[0].rawValue;
+    }catch(e){ console.log('[decode] BarcodeDetector fallo en la foto subida, se prueba jsQR:', e && e.message); }
+  }
   function intento(maxDim){
     const c=document.createElement('canvas');
     const s=Math.min(1, maxDim/Math.max(img.width,img.height));
@@ -1379,9 +1392,9 @@ function imagenADataUrl(img, maxW){
 function procesarImagenSeleccionada(file){
   if(!file){ iniciarCamara(); return; } // cancelo el picker -> vuelve al modo en vivo
   const img=new Image();
-  img.onload=()=>{
+  img.onload=async ()=>{
     URL.revokeObjectURL(img.src);
-    const texto=decodificarImagen(img);
+    const texto=await decodificarImagen(img);
     if(!texto){
       toast('No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.', 'error');
       iniciarCamara();
