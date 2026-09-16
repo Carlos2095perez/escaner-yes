@@ -840,7 +840,7 @@ if('serviceWorker' in navigator){
 // de "reanudar" la reproduccion (por eso separarlo en su propia funcion,
 // reiniciarCamara(), en vez de solo volver a llamar play()) -- hay que
 // tirar el stream muerto y pedir uno nuevo desde cero con getUserMedia.
-document.addEventListener('visibilitychange', ()=>{
+document.addEventListener('visibilitychange', async ()=>{
   if(document.visibilityState!=='visible' || !escaneando) return;
   // Si el track sigue "live" (no todos los backgrounds matan la camara),
   // no hace falta reiniciar nada -- evita un corte/skeleton innecesario.
@@ -850,9 +850,24 @@ document.addEventListener('visibilitychange', ()=>{
   const track=stream && stream.getVideoTracks()[0];
   if(!track || track.readyState==='ended'){
     reiniciarCamara();
-  }else{
-    diagnosticarVideoPlay('volver de segundo plano, track sigue vivo');
+    return;
   }
+  await diagnosticarVideoPlay('volver de segundo plano, track sigue vivo');
+  // Despues de MUCHO tiempo en segundo plano, en ciertos Android/OEMs el
+  // track se queda reportando "live" (y video.paused en false) aunque el
+  // sistema ya le corto el acceso real a la camara -- el video se queda
+  // congelado en el ultimo frame de antes de segundo plano, sin ningun
+  // error que detectar. video.paused no alcanza para notar esto: hay que
+  // confirmar que currentTime de verdad avanza. Si no avanzo en medio
+  // segundo, se fuerza un reinicio completo del stream (mismo camino que
+  // un track realmente muerto), en vez de dejar la camara colgada
+  // esperando un QR que nunca va a leer.
+  const t0=video.currentTime;
+  setTimeout(()=>{
+    if(!escaneando || video.currentTime!==t0) return;
+    console.log('[DIAG cam] video congelado tras volver de segundo plano (currentTime no avanzo) -- forzando reinicio');
+    reiniciarCamara();
+  }, 500);
 });
 
 let voces=[];
@@ -1375,7 +1390,14 @@ async function decodificarImagen(img){
     const r=jsQR(d.data,d.width,d.height,{inversionAttempts:'attemptBoth'});
     return r?r.data:null;
   }
-  return intento(1200)||intento(1800)||intento(2600)||null;
+  // El ultimo intento es a resolucion NATIVA sin techo (antes el techo mas
+  // alto eran 2600px): una foto de camara moderna facil supera eso, y si
+  // el QR ocupa una porcion chica de la foto (comprobante fotografiado de
+  // lejos, o una captura de pantalla con el QR chico), bajarla a 2600 le
+  // sigue restando el detalle que jsQR necesita. Es un ultimo recurso (mas
+  // lento en fotos grandes), por eso va al final, despues de los intentos
+  // mas rapidos.
+  return intento(1200)||intento(1800)||intento(2600)||intento(Math.max(img.width,img.height))||null;
 }
 function imagenADataUrl(img, maxW){
   const c=document.createElement('canvas');
