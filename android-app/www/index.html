@@ -894,6 +894,14 @@ function cargarVoces(){ if(hayTTS) voces=speechSynthesis.getVoices(); }
 if(hayTTS){ cargarVoces(); if('onvoiceschanged' in speechSynthesis) speechSynthesis.onvoiceschanged=cargarVoces; }
 
 let ocupado=false, escaneando=false, noHallaDesde=0, stream=null;
+// Version del contenido web que esta corriendo AHORA en este dispositivo
+// (ver actualizarAppNativa() mas abajo) -- 'builtin' si nunca se aplico
+// ninguna actualizacion en vivo, o la fecha.N publicada si ya se aplico
+// alguna. Diagnostico temporal: se muestra en el toast de "no se detecto
+// QR" de la foto subida para saber, de un vistazo en una captura de
+// pantalla, si un cambio de verdad ya llego al celular o si el celular
+// sigue en una version vieja esperando el proximo reinicio completo.
+let versionAppActiva=null;
 // Contadores de diagnostico de fuga de recursos (ver iniciarCamaraInterna/
 // detenerCamara) + ids de requestAnimationFrame para poder cancelarlos de
 // verdad con cancelAnimationFrame en vez de depender solo de que el propio
@@ -1425,18 +1433,29 @@ function imagenADataUrl(img, maxW){
 // la logica de validacion entre subir una foto vieja o tomar una nueva.
 function procesarImagenSeleccionada(file){
   if(!file){ iniciarCamara(); return; } // cancelo el picker -> vuelve al modo en vivo
+  console.log('[DIAG subir] archivo elegido:', file.name, '|', file.size, 'bytes |', file.type);
   const img=new Image();
   img.onload=async ()=>{
     URL.revokeObjectURL(img.src);
+    console.log('[DIAG subir] imagen decodificada a', img.width+'x'+img.height, '| detector nativo disponible:', !!barcodeDetector);
     const texto=await decodificarImagen(img);
     if(!texto){
-      toast('No se detectó QR en la foto. Intenta de nuevo, más cerca y sin reflejos.', 'error');
+      // Diagnostico temporal (ver versionAppActiva mas arriba): dimension
+      // real de la foto, si habia detector nativo disponible, y que
+      // version de contenido esta corriendo -- para saber de una captura
+      // de pantalla si un fix ya llego al celular o no, sin necesitar
+      // acceso a la consola del navegador.
+      toast('No se detectó QR en la foto ('+img.width+'x'+img.height+'px, detector nativo: '+(barcodeDetector?'sí':'no')+', v'+(versionAppActiva||'?')+'). Intenta de nuevo, más cerca y sin reflejos.', 'error');
       iniciarCamara();
       return;
     }
     onScan(texto, imagenADataUrl(img,700));
   };
-  img.onerror=()=>{ toast('No se pudo leer la foto. Intenta de nuevo.', 'error'); iniciarCamara(); };
+  img.onerror=()=>{
+    console.log('[DIAG subir] la imagen NO cargo (onerror) -- archivo:', file.size, 'bytes,', file.type);
+    toast('No se pudo leer el archivo de la foto ('+file.size+' bytes). Intenta de nuevo.', 'error');
+    iniciarCamara();
+  };
   img.src=URL.createObjectURL(file);
 }
 $('fileInputGaleria').addEventListener('change', e=>{ procesarImagenSeleccionada(e.target.files[0]); });
@@ -2135,13 +2154,18 @@ async function actualizarAppNativa(){
   // tiempo, el plugin asume que el bundle actual fallo y revierte solo al
   // anterior.
   try{ await CU.notifyAppReady(); }catch(e){}
+  let actual=null;
+  try{
+    actual=await CU.current();
+    versionAppActiva=(actual && actual.bundle && actual.bundle.version) || 'builtin';
+  }catch(e){}
   try{
     const res=await fetch(NUVO_API+'/updates/latest.json', { cache:'no-store' });
     if(!res.ok) return;
     const info=await res.json();
     if(!info || !info.version || !info.url) return;
 
-    const [actual, siguiente]=await Promise.all([CU.current(), CU.getNextBundle()]);
+    const siguiente=await CU.getNextBundle();
     const versionActiva=actual && actual.bundle && actual.bundle.version;
     const versionEnCola=siguiente && siguiente.version;
     // Ya esta al dia, o ya hay una descarga de esta misma version esperando
