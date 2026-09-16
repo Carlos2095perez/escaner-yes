@@ -661,6 +661,18 @@ const NUVO_API='https://nuvo-validador-transferencias.vercel.app';
 // cualquier otra llamada de red, por eso esta linea va aca arriba y no mas
 // abajo junto al resto del codigo de "Mi cuenta"/exportar.
 actualizarAppNativa();
+// El chequeo de arriba corre UNA sola vez, cuando el script carga. Un
+// celular puede quedarse con la app abierta (proceso vivo, sin cerrarla
+// nunca del todo) durante dias, pasando de segundo a primer plano muchas
+// veces sin que el script vuelva a cargar -- sin esto, una version nueva
+// publicada mientras tanto NUNCA se descarga, porque nada vuelve a
+// preguntar. El plugin aplica la version en cola al pasar a SEGUNDO plano
+// (installNext() nativo, ver public/updates/README.md); para que haya
+// algo en cola que aplicar, hace falta volver a chequear cada vez que la
+// app vuelve a primer plano, no solo la primera vez.
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState==='visible') actualizarAppNativa();
+});
 const sbc=supabase.createClient(NUVO_URL, NUVO_ANON_KEY);
 let correoActual='';
 let nombreUsuario='';
