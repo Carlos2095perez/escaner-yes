@@ -2024,9 +2024,9 @@ function mostrar(r,d){
     const chip = r.guardado
       ? '<div class="chip">Registrado · pendiente de conciliar con el banco</div>'
       : '<div class="chip chip-warn">⚠️ NO quedó registrado: el comprobante no pudo verificarse como único</div>';
-    $('rbody').innerHTML='<div class="card">'+fila('Ordenante',d.ordenante)+
-      fila('Cuenta '+(CONFIG.NOMBRE_NEGOCIO||'destino'),'····'+last4)+fila('N° comprobante',d.comprobante)+'</div>'+
-      (alerta?'<div class="reasons">⚠️ '+(r.motivos||[]).join(' ')+'</div>':'')+
+    $('rbody').innerHTML='<div class="card">'+fila('Ordenante',escapeHtml(d.ordenante))+
+      fila('Cuenta '+(CONFIG.NOMBRE_NEGOCIO||'destino'),'····'+last4)+fila('N° comprobante',escapeHtml(d.comprobante))+'</div>'+
+      (alerta?'<div class="reasons">⚠️ '+(r.motivos||[]).map(escapeHtml).join(' ')+'</div>':'')+
       chip;
     // Confetti solo para el aceptado realmente limpio -- para alerta seria
     // celebrar algo que todavia tiene una advertencia sin resolver.
@@ -2036,7 +2036,7 @@ function mostrar(r,d){
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No continuar';
     $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
     $('ramount').textContent=titulo;
-    $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).join('<br>')+'</div>';
+    $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).map(escapeHtml).join('<br>')+'</div>';
     hablarRechazo(r, d);
   }
 }
