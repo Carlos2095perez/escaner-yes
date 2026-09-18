@@ -355,6 +355,8 @@ canvas{display:none}
 .pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
   background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
+.pc-export-bloqueado{font-size:12px;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--azul-70);
+  border-radius:12px;padding:10px 14px;margin-bottom:12px}
 .pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
 .pc-buscador{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:16px;padding:14px;margin-bottom:12px}
 .pc-search-wrap{position:relative;margin-bottom:8px}
@@ -431,6 +433,7 @@ canvas{display:none}
   .pc-mov-hora,.pc-mov-txt{color:#0A163D}
   .pc-mov-detalle{color:#5A6076}
   .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
+  .pc-export-bloqueado{background:#fff;border-color:#E4E7F0;color:#5A6076}
   .pc-chart-label{fill:rgba(10,22,61,.55)}
   .pc-buscador{background:#fff;border-color:#E4E7F0}
   .pc-filtro input,.pc-filtro select,.pc-search-wrap input{background:#F5F6FA;border-color:#E4E7F0;color:#0A163D}
@@ -623,10 +626,11 @@ canvas{display:none}
 
         <div class="pc-resumen" id="pcResumenFiltro" hidden></div>
 
-        <div class="pc-movs-botones" style="margin-bottom:12px">
+        <div class="pc-movs-botones" id="pcExportarBotones" style="margin-bottom:12px">
           <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
           <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
         </div>
+        <p class="pc-export-bloqueado" id="pcExportBloqueado" hidden>Exportar a PDF/Excel está disponible en los planes Negocio y Equipo.</p>
         <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
         <div id="pcMovs"></div>
       </div>
@@ -2084,6 +2088,7 @@ function reanudar(){
 
 // --- Mi cuenta: dias restantes, dinero cobrado y estadisticas de escaneos ---
 const VEREDICTOS_LEGIBLES_PC = { PENDIENTE_CONCILIACION:'Aceptado', ALERTA:'Aceptado (alerta)', RECHAZADO:'Rechazado', DUPLICADO:'Duplicado' };
+const ETIQUETAS_PLAN = { individual:'Individual', negocio:'Negocio', equipo:'Equipo' };
 const ACEPTADOS_PC = ['PENDIENTE_CONCILIACION','ALERTA'];
 let ultimoDashboard = {};
 
@@ -2199,7 +2204,9 @@ async function abrirCuenta(){
     if(!res.ok) throw new Error(d.error||'Error');
     ultimoDashboard = d;
 
-    $('pcPlan').textContent = d.plan || 'básico';
+    $('pcPlan').textContent = ETIQUETAS_PLAN[d.plan] || 'Individual';
+    $('pcExportarBotones').hidden = !d.puedeExportar;
+    $('pcExportBloqueado').hidden = !!d.puedeExportar;
     $('pcVence').textContent = d.membresiaVencimiento
       ? ('Vence '+new Date(d.membresiaVencimiento).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))
       : 'Sin fecha de vencimiento';
