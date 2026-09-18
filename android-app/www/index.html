@@ -337,6 +337,23 @@ canvas{display:none}
 .pc-hero .l{font-size:12px;color:#DFFFE9;text-transform:uppercase;letter-spacing:.08em;font-family:var(--sora);font-weight:700}
 .pc-hero .n{font-family:var(--sora);font-weight:800;font-size:36px;margin-top:4px;color:#fff}
 
+.pc-hero-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.pc-hero-sm{border-radius:16px;padding:14px 16px}
+.pc-hero-sm.violeta{background:linear-gradient(135deg,#6C3AED 0%,#4527A0 100%);box-shadow:0 10px 24px -10px rgba(108,58,237,.55)}
+.pc-hero-sm.azul{background:linear-gradient(135deg,#1B2C63 0%,#0A163D 100%);box-shadow:0 10px 24px -10px rgba(10,22,61,.6)}
+.pc-hero-sm .l{font-size:10.5px;color:rgba(255,255,255,.72);text-transform:uppercase;letter-spacing:.07em;font-family:var(--sora);font-weight:700}
+.pc-hero-sm .n{font-family:var(--sora);font-weight:800;font-size:21px;margin-top:5px;color:#fff}
+
+.pc-semaforo{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px}
+.pc-semaforo-card{background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:14px;padding:12px 8px;text-align:center}
+.pc-semaforo-card .dot{width:9px;height:9px;border-radius:50%;margin:0 auto 7px}
+.pc-semaforo-card.verde .dot{background:var(--green);box-shadow:0 0 8px 0 rgba(0,210,106,.7)}
+.pc-semaforo-card.amarillo .dot{background:var(--yellow);box-shadow:0 0 8px 0 rgba(255,199,0,.6)}
+.pc-semaforo-card.rojo .dot{background:var(--red);box-shadow:0 0 8px 0 rgba(255,65,82,.6)}
+.pc-semaforo-card .n{font-family:var(--sora);font-weight:800;font-size:15.5px;color:#fff}
+.pc-semaforo-card .l{font-size:9px;color:var(--muted);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.pc-semaforo-card .c{font-size:10px;color:var(--muted);margin-top:2px}
+
 .pc-chart-wrap{margin-bottom:16px}
 .pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin-bottom:8px}
 .pc-chart{width:100%;height:90px;display:block}
@@ -428,6 +445,8 @@ canvas{display:none}
   .pc-tab-btn{color:#5A6076}
   .pstat{background:#fff;border-color:#E4E7F0}
   .pstat .n{color:#0A163D}
+  .pc-semaforo-card{background:#fff;border-color:#E4E7F0}
+  .pc-semaforo-card .n{color:#0A163D}
   .pc-chart-title{color:#5A6076}
   .pc-mov-row{border-bottom-color:#E4E7F0}
   .pc-mov-hora,.pc-mov-txt{color:#0A163D}
@@ -557,15 +576,43 @@ canvas{display:none}
     </div>
 
     <div class="pc-tabs" role="tablist">
-      <button class="pc-tab-btn pressable active" data-tab="plan" role="tab" aria-selected="true">Plan</button>
+      <button class="pc-tab-btn pressable active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
+      <button class="pc-tab-btn pressable" data-tab="plan" role="tab" aria-selected="false">Plan</button>
       <button class="pc-tab-btn pressable" data-tab="hoy" role="tab" aria-selected="false">Hoy</button>
-      <button class="pc-tab-btn pressable" data-tab="dashboard" role="tab" aria-selected="false">Dashboard</button>
       <button class="pc-tab-btn pressable" data-tab="filtros" role="tab" aria-selected="false">Filtros</button>
     </div>
 
     <div class="pc-tab-content" id="pcTabContent">
 
-      <div class="pc-tab-panel" data-tab-panel="plan">
+      <div class="pc-tab-panel" data-tab-panel="dashboard">
+        <div class="pc-hero">
+          <div class="l">Cobrado hoy</div>
+          <div class="n" id="pcMontoHoy">—</div>
+        </div>
+
+        <div class="pc-hero-row">
+          <div class="pc-hero-sm violeta">
+            <div class="l">Este mes</div>
+            <div class="n" id="pcMontoMes">—</div>
+          </div>
+          <div class="pc-hero-sm azul">
+            <div class="l">Este año</div>
+            <div class="n" id="pcMontoAnio">—</div>
+          </div>
+        </div>
+
+        <div class="pc-chart-wrap">
+          <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
+          <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
+        </div>
+
+        <div class="pc-chart-title">Cobros por estado · este mes</div>
+        <div class="pc-semaforo" id="pcSemaforo"></div>
+
+        <div class="panel-stats" id="pcStats"></div>
+      </div>
+
+      <div class="pc-tab-panel" data-tab-panel="plan" hidden>
         <div class="pc-membresia">
           <div>
             <div class="l">Membresía</div>
@@ -582,20 +629,6 @@ canvas{display:none}
       <div class="pc-tab-panel" data-tab-panel="hoy" hidden>
         <div class="pc-chart-title">Comprobantes del día</div>
         <div id="pcMovsHoy"></div>
-      </div>
-
-      <div class="pc-tab-panel" data-tab-panel="dashboard" hidden>
-        <div class="pc-hero">
-          <div class="l">Cobrado hoy</div>
-          <div class="n" id="pcMontoHoy">—</div>
-        </div>
-
-        <div class="pc-chart-wrap">
-          <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
-          <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
-        </div>
-
-        <div class="panel-stats" id="pcStats"></div>
       </div>
 
       <div class="pc-tab-panel" data-tab-panel="filtros" hidden>
@@ -2093,6 +2126,10 @@ const ACEPTADOS_PC = ['PENDIENTE_CONCILIACION','ALERTA'];
 let ultimoDashboard = {};
 
 function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
+function semaforoCard(clase,monto,etiqueta,total){
+  return '<div class="pc-semaforo-card '+clase+'"><div class="dot"></div><div class="n">$'+monto.toFixed(2)+'</div>'+
+    '<div class="l">'+etiqueta+'</div><div class="c">'+total+' '+(total===1?'comprobante':'comprobantes')+'</div></div>';
+}
 
 // Ordenante (quien pago) + comprobante son la forma real de "identificar"
 // un movimiento -- antes la fila solo mostraba hora/veredicto/monto,
@@ -2186,11 +2223,12 @@ async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
   pcFiltrosCargados=false;
-  cambiarPcTab('plan');
+  cambiarPcTab('dashboard');
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
   $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
-  $('pcMontoHoy').textContent='—';
+  $('pcMontoHoy').textContent='—'; $('pcMontoMes').textContent='—'; $('pcMontoAnio').textContent='—';
   $('pcChart').innerHTML='';
+  $('pcSemaforo').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
   $('pcMovsHoy').innerHTML='';
   $('pcMovs').innerHTML='';
@@ -2218,8 +2256,16 @@ async function abrirCuenta(){
     }
 
     $('pcMontoHoy').textContent = '$'+((d.hoy&&d.hoy.monto)||0).toFixed(2);
+    $('pcMontoMes').textContent = '$'+(d.montoMes||0).toFixed(2);
+    $('pcMontoAnio').textContent = '$'+(d.montoAnio||0).toFixed(2);
 
     renderChart(d.semana);
+
+    const mes = d.mes || {};
+    $('pcSemaforo').innerHTML =
+      semaforoCard('verde', (mes.verde&&mes.verde.monto)||0, 'Verde', (mes.verde&&mes.verde.total)||0) +
+      semaforoCard('amarillo', (mes.amarillo&&mes.amarillo.monto)||0, 'Amarillo', (mes.amarillo&&mes.amarillo.total)||0) +
+      semaforoCard('rojo', (mes.rojo&&mes.rojo.monto)||0, 'Rojo', (mes.rojo&&mes.rojo.total)||0);
 
     $('pcStats').innerHTML =
       pstat(d.totalEscaneos||0, 'Escaneos totales') +
