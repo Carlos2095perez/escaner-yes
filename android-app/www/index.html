@@ -736,6 +736,14 @@ const $=id=>document.getElementById(id);
 function escapeHtml(s){
   return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// Mismo origen externo que escapeHtml (texto del QR bancario) pero para
+// celdas de Excel: si empieza con =, +, - o @, Excel/Sheets puede
+// interpretarlo como formula al abrir el archivo exportado -- se le
+// antepone un espacio para que quede como texto literal.
+function celdaSegura(s){
+  const t=String(s==null?'':s);
+  return /^[=+\-@]/.test(t) ? ' '+t : t;
+}
 // Unica fuente de verdad para mostrar una fecha/hora al usuario. El bug real
 // no era el almacenamiento (creado_en es timestamptz, correcto) sino que
 // toLocaleString('es-EC') sin `timeZone` usa la zona del DISPOSITIVO que
@@ -2580,8 +2588,14 @@ function mostrarExcelEnApp(workbook, nombreArchivo, base64ParaGuardar){
     $('btnDocGuardar').onclick=()=>guardarArchivoNativo(nombreArchivo, base64ParaGuardar, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   }
   const hoja=workbook.Sheets[workbook.SheetNames[0]];
-  const html=XLSX.utils.sheet_to_html(hoja, { header:'', footer:'' });
-  $('docViewerBody').innerHTML='<div class="doc-table-wrap">'+html+'</div>';
+  // XLSX.utils.sheet_to_html() NO escapa < > & en el contenido de las
+  // celdas (limitacion conocida de esa funcion en la libreria) -- como
+  // el ordenante/comprobante vienen del QR (texto externo, fabricable
+  // por cualquiera), se arma la tabla a mano con escapeHtml por celda en
+  // vez de confiar en el HTML que devuelve sheet_to_html.
+  const filasAoa=XLSX.utils.sheet_to_json(hoja, { header:1, raw:false, defval:'' });
+  const html=filasAoa.map(fila=>'<tr>'+fila.map(c=>'<td>'+escapeHtml(c)+'</td>').join('')+'</tr>').join('');
+  $('docViewerBody').innerHTML='<div class="doc-table-wrap"><table>'+html+'</table></div>';
 }
 
 $('btnPcPdf').addEventListener('click', async () => {
@@ -2647,8 +2661,8 @@ $('btnPcExcel').addEventListener('click', async () => {
     const desde=$('pcDesde').value, hasta=$('pcHasta').value;
     const filas = movs.map(m=>({
       Fecha: formatearFechaEC(m.fecha),
-      Cliente: m.ordenante||'',
-      'N° comprobante': m.comprobante||'',
+      Cliente: celdaSegura(m.ordenante||''),
+      'N° comprobante': celdaSegura(m.comprobante||''),
       Veredicto: VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto,
       Monto: m.monto?Number(m.monto):'',
     }));
