@@ -4,9 +4,9 @@
     <cache-path name="my_cache_images" path="." />
     <!-- Directory.Data de @capacitor/filesystem (donde guardarArchivoNativo()
          en scanner.html escribe el PDF/Excel antes de compartirlo) es la
-         carpeta "files" propia de la app -- sin esta entrada, FileProvider
+         carpeta "files" propia de la app: sin esta entrada, FileProvider
          no encuentra una raiz configurada para esa carpeta y
-         getUriForFile() tira IllegalArgumentException: el share/guardado
+         getUriForFile() tira IllegalArgumentException. El share/guardado
          del PDF fallaba en silencio (atrapado por el try/catch de
          guardarArchivoNativo), nunca llegaba a mostrarse el cuadro de
          compartir de verdad. -->
