@@ -36,6 +36,16 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Visor de documentos DENTRO de la app (ver mostrarDocEnApp() mas abajo):
+     "Descargar" en la app nativa dependia de que el celular tuviera algun
+     visor de PDF instalado para poder VERLO (Intent.ACTION_VIEW) -- en
+     celulares sin uno, silenciosamente caia al cuadro de "compartir con...",
+     que es lo que la persona seguia viendo aunque el intent estuviera bien
+     armado. pdf.js elimina esa dependencia por completo: dibuja el PDF en
+     un <canvas> con JavaScript puro, adentro de la app, sin importar que
+     otras apps tenga instaladas el celular. -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';</script>
 <style>
 :root{
   --ink:#0A163D; --azul-70:#3A4468; --violeta:#6C3AED; --yellow:#FFC700;
@@ -275,6 +285,31 @@ canvas{display:none}
   padding:calc(env(safe-area-inset-top) + 18px) 20px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
 .panel-head h3{font-family:var(--sora);font-weight:700;font-size:19px}
 .panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;flex-shrink:0}
+
+/* Visor de documentos (PDF/Excel) DENTRO de la app -- pantalla completa,
+   por encima de "Mi cuenta". */
+.doc-viewer{position:fixed;inset:0;z-index:11;display:none;flex-direction:column;background:#1a1a22}
+.doc-viewer.on{display:flex}
+.doc-viewer-head{flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:calc(env(safe-area-inset-top) + 18px) 20px 14px;border-bottom:1px solid rgba(255,255,255,.1);background:var(--ink)}
+.doc-viewer-head h3{font-family:var(--sora);font-weight:700;font-size:15px;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.doc-viewer-acciones{display:flex;align-items:center;gap:10px;flex-shrink:0}
+/* Boton propio (no .panel-close): el visor SIEMPRE es oscuro, sin
+   importar el tema del sistema -- .panel-close tiene un override para
+   modo claro pensado para el panel de "Mi cuenta" (que si cambia de
+   tema), y reusarlo aca dejaba el icono oscuro sobre un fondo tambien
+   oscuro, invisible. */
+.doc-viewer-close{background:rgba(255,255,255,.14);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;flex-shrink:0}
+.doc-viewer-guardar{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:12.5px;color:#fff;
+  background:var(--violeta);border:0;padding:9px 14px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.doc-viewer-guardar:active{transform:scale(.97)}
+.doc-viewer-body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px calc(env(safe-area-inset-bottom) + 16px)}
+.doc-page{display:block;margin:0 auto 14px;max-width:100%;height:auto;box-shadow:0 8px 24px -6px rgba(0,0,0,.6);border-radius:4px}
+.doc-table-wrap{background:#fff;border-radius:10px;overflow:auto;padding:4px}
+.doc-table-wrap table{border-collapse:collapse;font-size:12px;font-family:var(--inter);width:100%}
+.doc-table-wrap td,.doc-table-wrap th{border:1px solid #E4E7F0;padding:6px 10px;white-space:nowrap;color:#1F2330}
+.doc-table-wrap tr:first-child td{font-family:var(--sora);font-weight:700;background:#F5F6FA}
+.doc-viewer-msg{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px}
 
 .pc-tabs{flex:0 0 auto;display:flex;gap:4px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
 .pc-tab-btn{flex:1;font-family:var(--sora);font-weight:700;font-size:12.5px;color:var(--muted);
@@ -598,6 +633,21 @@ canvas{display:none}
 
     </div>
   </div>
+</div>
+
+<!-- Visor de documentos: muestra el PDF (pdf.js, canvas) o el Excel (tabla
+     HTML, con XLSX.utils.sheet_to_html) DENTRO de la app -- ver
+     mostrarDocEnApp() mas abajo. Encima de #panelCuenta (z-index mas alto),
+     porque se abre desde adentro de la pestaña Filtros. -->
+<div class="doc-viewer" id="docViewer">
+  <div class="doc-viewer-head">
+    <h3 id="docViewerTitulo">Documento</h3>
+    <div class="doc-viewer-acciones">
+      <button class="doc-viewer-guardar pressable" id="btnDocGuardar" style="display:none">Guardar / compartir</button>
+      <button class="doc-viewer-close pressable" id="btnDocCerrar">✕</button>
+    </div>
+  </div>
+  <div class="doc-viewer-body" id="docViewerBody"></div>
 </div>
 
 <script>
@@ -2304,15 +2354,17 @@ async function actualizarAppNativa(){
 // entre versiones). En cualquier otro contexto (PWA, navegador, Safari
 // iOS) esto no se llama -- se usa la descarga normal del navegador.
 //
-// Para MOSTRAR el archivo (no solo generarlo) se usa NuvoScanner.
-// abrirArchivo() -- un metodo nativo propio (Intent.ACTION_VIEW) que abre
-// el visor de PDF/Excel que el usuario tenga por defecto. El plugin
-// @capacitor/share que se uso antes SOLO arma un cuadro de "compartir
-// con..." (Intent.ACTION_SEND: WhatsApp, imprimir, etc.) -- nunca "abrir y
-// ver en pantalla", que es lo que pide la persona al tocar "Descargar".
-// Si abrirArchivo() falla (version vieja de la app todavia sin este
-// metodo nativo, o no hay ningun visor instalado) cae al cuadro de
-// compartir de siempre, para no dejar a la persona sin ninguna salida.
+// VER el documento ya NO depende de esto (ver mostrarPdfEnApp/
+// mostrarExcelEnApp mas abajo: se dibuja adentro de la app con pdf.js/una
+// tabla HTML, sin depender de ninguna app externa). Este botón ("Guardar /
+// compartir" dentro del visor) es solo para cuando la persona quiere
+// SACAR el archivo de la app -- guardarlo en Descargas, mandarlo por
+// WhatsApp, imprimirlo. Intento anterior (NuvoScanner.abrirArchivo(),
+// Intent.ACTION_VIEW): dependia de que el celular tuviera algun visor de
+// PDF instalado -- en uno que no, caia en silencio al cuadro de
+// compartir, y la persona seguia viendo exactamente lo mismo de antes sin
+// ninguna pista de por que. Compartir (Intent.ACTION_SEND) no tiene ese
+// problema: siempre hay algo para elegir (aunque sea solo Bluetooth).
 async function guardarArchivoNativo(nombreArchivo, base64, mimeType){
   const { uri } = await Capacitor.Plugins.Filesystem.writeFile({
     path: nombreArchivo,
@@ -2320,14 +2372,66 @@ async function guardarArchivoNativo(nombreArchivo, base64, mimeType){
     directory: 'DATA',
   });
   try{
-    await Capacitor.Plugins.NuvoScanner.abrirArchivo({ path: uri, mimeType: mimeType||'*/*' });
+    await Capacitor.Plugins.Share.share({ title: nombreArchivo, url: uri });
   }catch(e){
-    try{
-      await Capacitor.Plugins.Share.share({ title: nombreArchivo, url: uri });
-    }catch(e2){
-      toast('Archivo generado. Tocá "Descargar" de nuevo para verlo o compartirlo.');
-    }
+    toast('Archivo generado. Tocá "Guardar / compartir" de nuevo para guardarlo o compartirlo.');
   }
+}
+
+function cerrarDocViewer(){
+  $('docViewer').classList.remove('on');
+  $('docViewerBody').innerHTML='';
+  $('btnDocGuardar').style.display='none';
+  $('btnDocGuardar').onclick=null;
+}
+$('btnDocCerrar').addEventListener('click', cerrarDocViewer);
+
+// Dibuja el PDF pagina por pagina en <canvas> con pdf.js -- funciona
+// siempre, sin depender de que el celular tenga un visor de PDF instalado.
+async function mostrarPdfEnApp(arrayBuffer, nombreArchivo, base64ParaGuardar){
+  $('docViewerTitulo').textContent=nombreArchivo;
+  $('docViewerBody').innerHTML='<div class="doc-viewer-msg">Cargando…</div>';
+  $('docViewer').classList.add('on');
+  if(esNativoAndroid() && base64ParaGuardar){
+    $('btnDocGuardar').style.display='inline-flex';
+    $('btnDocGuardar').onclick=()=>guardarArchivoNativo(nombreArchivo, base64ParaGuardar, 'application/pdf');
+  }
+  try{
+    if(!window.pdfjsLib) throw new Error('No se pudo cargar el visor de PDF (revisa tu conexión).');
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const body=$('docViewerBody');
+    body.innerHTML='';
+    const dpr=Math.min(window.devicePixelRatio||1, 2);
+    for(let n=1; n<=pdf.numPages; n++){
+      const page=await pdf.getPage(n);
+      const anchoDisponible=body.clientWidth-4;
+      const escalaBase=anchoDisponible/page.getViewport({scale:1}).width;
+      const viewport=page.getViewport({ scale: escalaBase*dpr });
+      const canvas=document.createElement('canvas');
+      canvas.className='doc-page';
+      canvas.width=viewport.width; canvas.height=viewport.height;
+      canvas.style.width=(viewport.width/dpr)+'px'; canvas.style.height=(viewport.height/dpr)+'px';
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      body.appendChild(canvas);
+    }
+  }catch(e){
+    $('docViewerBody').innerHTML='<div class="doc-viewer-msg">No se pudo mostrar el PDF: '+escapeHtml(e.message)+'</div>';
+  }
+}
+
+// Excel no se puede "dibujar" como el PDF -- se muestra como tabla HTML
+// (XLSX.utils.sheet_to_html, la misma libreria que ya arma el archivo).
+// Mismo principio: no depende de ninguna app externa instalada.
+function mostrarExcelEnApp(workbook, nombreArchivo, base64ParaGuardar){
+  $('docViewerTitulo').textContent=nombreArchivo;
+  $('docViewer').classList.add('on');
+  if(esNativoAndroid() && base64ParaGuardar){
+    $('btnDocGuardar').style.display='inline-flex';
+    $('btnDocGuardar').onclick=()=>guardarArchivoNativo(nombreArchivo, base64ParaGuardar, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+  const hoja=workbook.Sheets[workbook.SheetNames[0]];
+  const html=XLSX.utils.sheet_to_html(hoja, { header:'', footer:'' });
+  $('docViewerBody').innerHTML='<div class="doc-table-wrap">'+html+'</div>';
 }
 
 $('btnPcPdf').addEventListener('click', async () => {
@@ -2376,8 +2480,9 @@ $('btnPcPdf').addEventListener('click', async () => {
     });
     const nombreArchivoPdf='mis-movimientos_'+desde+'_a_'+hasta+'.pdf';
     if(esNativoAndroid()){
+      const arrayBuffer=doc.output('arraybuffer');
       const base64=doc.output('datauristring').replace(/^data:.*?;base64,/, '');
-      await guardarArchivoNativo(nombreArchivoPdf, base64, 'application/pdf');
+      await mostrarPdfEnApp(arrayBuffer, nombreArchivoPdf, base64);
     }else{
       doc.save(nombreArchivoPdf);
     }
@@ -2404,7 +2509,7 @@ $('btnPcExcel').addEventListener('click', async () => {
     const nombreArchivoXlsx='mis-movimientos_'+desde+'_a_'+hasta+'.xlsx';
     if(esNativoAndroid()){
       const base64=XLSX.write(wb, { type:'base64', bookType:'xlsx' });
-      await guardarArchivoNativo(nombreArchivoXlsx, base64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      mostrarExcelEnApp(wb, nombreArchivoXlsx, base64);
     }else{
       XLSX.writeFile(wb, nombreArchivoXlsx);
     }
