@@ -2297,29 +2297,36 @@ async function actualizarAppNativa(){
 // En la app nativa de Android, doc.save()/XLSX.writeFile() no hacen nada
 // visible al tocar "Descargar": dependen del atributo download de un <a>,
 // que el WebView de Capacitor no implementa -- el archivo se genera pero
-// nunca llega a guardarse. Ahi se escribe con el plugin Filesystem en la
-// carpeta Documentos (publica, visible desde otras apps en Android) y se
-// ofrece compartir con Share. En cualquier otro contexto (PWA, navegador,
-// Safari iOS) esto no se llama -- se usa la descarga normal del navegador.
-// Directory.Data (almacenamiento propio de la app) en vez de Documentos:
-// escribir en la carpeta publica de Documentos tiene reglas de permisos
-// que cambian entre versiones de Android (10 exige un flag en el
-// manifest, 11+ las cambia de nuevo) -- Data nunca pide permiso, en
-// ninguna version, porque es privada de la app. El cuadro de compartir
-// (Share) es lo que de verdad entrega el archivo al usuario: desde ahi
-// puede guardarlo en Descargas, mandarlo por WhatsApp o correo, etc.
-async function guardarArchivoNativo(nombreArchivo, base64){
+// nunca llega a guardarse. Ahi se escribe con el plugin Filesystem, en
+// Directory.Data (almacenamiento propio de la app -- nunca pide permiso,
+// en ninguna version de Android, porque es privada de la app; escribir en
+// la carpeta publica de Documentos tiene reglas de permisos que cambian
+// entre versiones). En cualquier otro contexto (PWA, navegador, Safari
+// iOS) esto no se llama -- se usa la descarga normal del navegador.
+//
+// Para MOSTRAR el archivo (no solo generarlo) se usa NuvoScanner.
+// abrirArchivo() -- un metodo nativo propio (Intent.ACTION_VIEW) que abre
+// el visor de PDF/Excel que el usuario tenga por defecto. El plugin
+// @capacitor/share que se uso antes SOLO arma un cuadro de "compartir
+// con..." (Intent.ACTION_SEND: WhatsApp, imprimir, etc.) -- nunca "abrir y
+// ver en pantalla", que es lo que pide la persona al tocar "Descargar".
+// Si abrirArchivo() falla (version vieja de la app todavia sin este
+// metodo nativo, o no hay ningun visor instalado) cae al cuadro de
+// compartir de siempre, para no dejar a la persona sin ninguna salida.
+async function guardarArchivoNativo(nombreArchivo, base64, mimeType){
   const { uri } = await Capacitor.Plugins.Filesystem.writeFile({
     path: nombreArchivo,
     data: base64,
     directory: 'DATA',
   });
   try{
-    await Capacitor.Plugins.Share.share({ title: nombreArchivo, url: uri });
+    await Capacitor.Plugins.NuvoScanner.abrirArchivo({ path: uri, mimeType: mimeType||'*/*' });
   }catch(e){
-    // El usuario cerro el cuadro de compartir sin elegir nada -- el
-    // archivo se genero bien, solo no se guardo/envio a ningun lado.
-    toast('Archivo generado. Tocá "Descargar" de nuevo para guardarlo o compartirlo.');
+    try{
+      await Capacitor.Plugins.Share.share({ title: nombreArchivo, url: uri });
+    }catch(e2){
+      toast('Archivo generado. Tocá "Descargar" de nuevo para verlo o compartirlo.');
+    }
   }
 }
 
@@ -2370,7 +2377,7 @@ $('btnPcPdf').addEventListener('click', async () => {
     const nombreArchivoPdf='mis-movimientos_'+desde+'_a_'+hasta+'.pdf';
     if(esNativoAndroid()){
       const base64=doc.output('datauristring').replace(/^data:.*?;base64,/, '');
-      await guardarArchivoNativo(nombreArchivoPdf, base64);
+      await guardarArchivoNativo(nombreArchivoPdf, base64, 'application/pdf');
     }else{
       doc.save(nombreArchivoPdf);
     }
@@ -2397,7 +2404,7 @@ $('btnPcExcel').addEventListener('click', async () => {
     const nombreArchivoXlsx='mis-movimientos_'+desde+'_a_'+hasta+'.xlsx';
     if(esNativoAndroid()){
       const base64=XLSX.write(wb, { type:'base64', bookType:'xlsx' });
-      await guardarArchivoNativo(nombreArchivoXlsx, base64);
+      await guardarArchivoNativo(nombreArchivoXlsx, base64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     }else{
       XLSX.writeFile(wb, nombreArchivoXlsx);
     }

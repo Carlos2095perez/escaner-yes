@@ -1,13 +1,17 @@
 package com.nuvo.validador;
 
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Build;
 import android.speech.tts.TextToSpeech;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
 import java.util.Locale;
 
 // Puente entre el JavaScript de la app y el servicio nativo en segundo
@@ -67,6 +71,46 @@ public class NuvoScannerPlugin extends Plugin {
     protected void handleOnDestroy() {
         if (ttsDirecto != null) { ttsDirecto.stop(); ttsDirecto.shutdown(); ttsDirecto = null; }
         super.handleOnDestroy();
+    }
+
+    // Abre un archivo (PDF/Excel guardado por guardarArchivoNativo() en
+    // scanner.html) para VERLO, no para compartirlo -- Intent.ACTION_VIEW,
+    // no ACTION_SEND. @capacitor/share solo sabe armar un cuadro de
+    // "compartir con..." (Intent.ACTION_SEND): apps de mensajeria,
+    // impresion, etc., nunca "abrir y mostrar en pantalla". Android abre
+    // el visor de PDF que el usuario tenga configurado por defecto, o un
+    // selector de "abrir con" si hay mas de uno instalado -- de cualquier
+    // forma, el archivo se VE, no se manda a ningun lado. Reusa el mismo
+    // FileProvider (mismo authority, mismo file_paths.xml) que ya usa
+    // @capacitor/share para que la app externa pueda leer el archivo.
+    @PluginMethod
+    public void abrirArchivo(PluginCall call) {
+        String path = call.getString("path");
+        String mimeType = call.getString("mimeType", "*/*");
+        if (path == null) {
+            call.reject("Falta la ruta del archivo");
+            return;
+        }
+        try {
+            File archivo = new File(Uri.parse(path).getPath());
+            Uri uriCompartible = FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                archivo
+            );
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uriCompartible, mimeType);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("ok", true);
+            call.resolve(ret);
+        } catch (ActivityNotFoundException e) {
+            call.reject("No hay ninguna app instalada que pueda abrir este archivo");
+        } catch (Exception e) {
+            call.reject("No se pudo abrir el archivo: " + e.getMessage());
+        }
     }
 
     @PluginMethod
