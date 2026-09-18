@@ -375,6 +375,15 @@ canvas{display:none}
 .pc-semaforo-card .l{font-size:9px;color:var(--muted);margin-top:4px;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .pc-semaforo-card .c{font-size:10px;color:var(--muted);margin-top:2px}
 
+.pc-vendedores{margin-bottom:16px}
+.pc-vendedor-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:12px;padding:11px 14px;margin-bottom:8px}
+.pc-vendedor-row .nombre{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px}
+.pc-vendedor-row .badge-dueno{font-size:9px;font-weight:700;color:var(--violeta);background:rgba(108,58,237,.15);
+  padding:2px 7px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
+.pc-vendedor-row .detalle{font-size:10.5px;color:var(--muted);margin-top:2px}
+.pc-vendedor-row .monto{font-family:var(--sora);font-weight:800;font-size:15px;text-align:right;flex-shrink:0}
+
 .pc-chart-wrap{margin-bottom:16px}
 .pc-chart-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin-bottom:8px}
 .pc-chart{width:100%;height:90px;display:block}
@@ -471,6 +480,8 @@ canvas{display:none}
   .pc-uso{background:#fff;border-color:#E4E7F0}
   .pc-uso-row .v{color:#0A163D}
   .pc-uso-bar{background:#EEF0F5}
+  .pc-vendedor-row{background:#fff;border-color:#E4E7F0}
+  .pc-vendedor-row .nombre,.pc-vendedor-row .monto{color:#0A163D}
   .pc-benef-item{border-bottom-color:#E4E7F0}
   .pc-benef-item .t{color:#0A163D}
   .pc-benef-item.off .t{color:#9AA1AA}
@@ -637,6 +648,11 @@ canvas{display:none}
 
         <div class="pc-chart-title">Cobros por estado · este mes</div>
         <div class="pc-semaforo" id="pcSemaforo"></div>
+
+        <div id="pcPorVendedorWrap" hidden>
+          <div class="pc-chart-title">Por vendedor · este mes</div>
+          <div class="pc-vendedores" id="pcPorVendedor"></div>
+        </div>
 
         <div class="panel-stats" id="pcStats"></div>
       </div>
@@ -2214,6 +2230,14 @@ function semaforoCard(clase,monto,etiqueta,total){
   return '<div class="pc-semaforo-card '+clase+'"><div class="dot"></div><div class="n">$'+monto.toFixed(2)+'</div>'+
     '<div class="l">'+etiqueta+'</div><div class="c">'+total+' '+(total===1?'comprobante':'comprobantes')+'</div></div>';
 }
+function pcVendedorHTML(lista){
+  return lista.map(v=>{
+    return '<div class="pc-vendedor-row"><div>'+
+      '<div class="nombre">'+escapeHtml(v.nombre)+(v.esDueno?' <span class="badge-dueno">Dueño</span>':'')+'</div>'+
+      '<div class="detalle">Hoy: $'+v.montoHoy.toFixed(2)+' · '+v.escaneosMes+' '+(v.escaneosMes===1?'escaneo':'escaneos')+' este mes</div>'+
+      '</div><div class="monto">$'+v.montoMes.toFixed(2)+'</div></div>';
+  }).join('');
+}
 
 // Ordenante (quien pago) + comprobante son la forma real de "identificar"
 // un movimiento -- antes la fila solo mostraba hora/veredicto/monto,
@@ -2314,6 +2338,7 @@ async function abrirCuenta(){
   $('pcChart').innerHTML='';
   $('pcSemaforo').innerHTML='';
   $('pcUso').innerHTML=''; $('pcBenef').innerHTML='';
+  $('pcPorVendedorWrap').hidden=true; $('pcPorVendedor').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
   $('pcMovsHoy').innerHTML='';
   $('pcMovs').innerHTML='';
@@ -2359,6 +2384,11 @@ async function abrirCuenta(){
       pstat(d.aceptados||0, 'Aceptados', 'ok') +
       pstat(d.rechazados||0, 'Rechazados', 'no') +
       pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana', 'amarillo');
+
+    if(d.porVendedor && d.porVendedor.length){
+      $('pcPorVendedorWrap').hidden=false;
+      $('pcPorVendedor').innerHTML=pcVendedorHTML(d.porVendedor);
+    }
 
     renderMovimientos('pcMovsHoy', d.movimientosHoy || [], 'Todavía no has escaneado nada hoy.');
   }catch(e){
