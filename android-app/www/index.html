@@ -265,13 +265,24 @@ canvas{display:none}
 @media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
 /* ---------- Mi cuenta ---------- */
-.panel{position:fixed;inset:0;z-index:9;display:none;align-items:flex-end;justify-content:center;background:rgba(4,6,12,.7);backdrop-filter:blur(4px)}
+/* "Mi cuenta" es pantalla completa (no un popup/sheet flotante): tapa toda
+   la app, fondo solido, header + pestañas fijos arriba y solo el
+   contenido de la pestaña activa hace scroll. */
+.panel{position:fixed;inset:0;z-index:9;display:none;background:var(--ink)}
 .panel.on{display:flex}
-.panel-card{width:100%;max-width:440px;max-height:88vh;overflow-y:auto;background:var(--ink);border-radius:24px 24px 0 0;
-  padding:24px 20px calc(env(safe-area-inset-bottom) + 24px);box-shadow:0 -16px 44px rgba(0,0,0,.5);border-top:3px solid var(--violeta)}
-.panel-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.panel-card{width:100%;height:100%;display:flex;flex-direction:column;min-height:0}
+.panel-head{flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;
+  padding:calc(env(safe-area-inset-top) + 18px) 20px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
 .panel-head h3{font-family:var(--sora);font-weight:700;font-size:19px}
 .panel-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:32px;height:32px;border-radius:50%;font-size:14px;cursor:pointer;flex-shrink:0}
+
+.pc-tabs{flex:0 0 auto;display:flex;gap:4px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.pc-tab-btn{flex:1;font-family:var(--sora);font-weight:700;font-size:12.5px;color:var(--muted);
+  background:transparent;border:0;border-radius:12px;padding:9px 4px;cursor:pointer;
+  transition:background .15s var(--ease-tap),color .15s var(--ease-tap)}
+.pc-tab-btn.active{background:var(--violeta);color:#fff}
+
+.pc-tab-content{flex:1 1 auto;min-height:0;overflow-y:auto;padding:20px 20px calc(env(safe-area-inset-bottom) + 24px)}
 
 /* Membresia: su propia tarjeta destacada, no un badge pequeno. */
 .pc-membresia{background:linear-gradient(135deg,var(--violeta) 0%,#3B2A78 75%);border-radius:16px;padding:18px 20px;
@@ -372,9 +383,12 @@ canvas{display:none}
   .link-tenue{color:#5A6076}
   .powered{color:rgba(10,22,61,.35)}
   .powered b{color:rgba(10,22,61,.5)}
-  .panel-card{background:#F5F6FA;border-top-color:var(--violeta)}
+  .panel{background:#F5F6FA}
+  .panel-head{border-bottom-color:#E4E7F0}
   .panel-head h3{color:#0A163D}
   .panel-close{background:rgba(10,22,61,.08);color:#0A163D}
+  .pc-tabs{border-bottom-color:#E4E7F0}
+  .pc-tab-btn{color:#5A6076}
   .pstat{background:#fff;border-color:#E4E7F0}
   .pstat .n{color:#0A163D}
   .pc-chart-title{color:#5A6076}
@@ -504,65 +518,85 @@ canvas{display:none}
       <button class="panel-close pressable" id="btnCerrarCuenta">✕</button>
     </div>
 
-    <div class="pc-membresia">
-      <div>
-        <div class="l">Membresía</div>
-        <div class="nombre-plan" id="pcPlan">—</div>
-        <div class="vence" id="pcVence"></div>
-      </div>
-      <div class="dias">
-        <div class="num" id="pcDiasNum">—</div>
-        <div class="txt">días</div>
-      </div>
+    <div class="pc-tabs" role="tablist">
+      <button class="pc-tab-btn pressable active" data-tab="plan" role="tab" aria-selected="true">Plan</button>
+      <button class="pc-tab-btn pressable" data-tab="hoy" role="tab" aria-selected="false">Hoy</button>
+      <button class="pc-tab-btn pressable" data-tab="dashboard" role="tab" aria-selected="false">Dashboard</button>
+      <button class="pc-tab-btn pressable" data-tab="filtros" role="tab" aria-selected="false">Filtros</button>
     </div>
 
-    <div class="pc-hero">
-      <div class="l">Cobrado hoy</div>
-      <div class="n" id="pcMontoHoy">—</div>
-    </div>
+    <div class="pc-tab-content" id="pcTabContent">
 
-    <div class="pc-chart-wrap">
-      <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
-      <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
-    </div>
-
-    <div class="panel-stats" id="pcStats"></div>
-
-    <div class="pc-movs-head">
-      <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
-    </div>
-    <div class="pc-buscador">
-      <div class="pc-search-wrap">
-        <svg class="pc-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
-        <input type="text" id="pcBuscarTexto" placeholder="Buscar por comprobante o nombre del cliente" autocomplete="off">
-        <div class="pc-autocomplete" id="pcAutocomplete" hidden></div>
+      <div class="pc-tab-panel" data-tab-panel="plan">
+        <div class="pc-membresia">
+          <div>
+            <div class="l">Membresía</div>
+            <div class="nombre-plan" id="pcPlan">—</div>
+            <div class="vence" id="pcVence"></div>
+          </div>
+          <div class="dias">
+            <div class="num" id="pcDiasNum">—</div>
+            <div class="txt">días</div>
+          </div>
+        </div>
       </div>
-      <div class="pc-filtro">
-        <input type="date" id="pcDesde">
-        <input type="date" id="pcHasta">
-      </div>
-      <div class="pc-filtro">
-        <select id="pcFiltroVeredicto">
-          <option value="">Todos los estados</option>
-          <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
-          <option value="ALERTA">Alertas</option>
-          <option value="RECHAZADO">Rechazados</option>
-          <option value="DUPLICADO">Duplicados</option>
-        </select>
-      </div>
-      <div class="pc-filtro">
-        <button class="pc-btn-primary pressable" id="btnPcBuscar">Buscar</button>
-        <button class="pc-btn-ghost pressable" id="btnPcLimpiar">Limpiar filtros</button>
-      </div>
-    </div>
 
-    <div class="pc-resumen" id="pcResumenFiltro" hidden></div>
+      <div class="pc-tab-panel" data-tab-panel="hoy" hidden>
+        <div class="pc-chart-title">Comprobantes del día</div>
+        <div id="pcMovsHoy"></div>
+      </div>
 
-    <div class="pc-movs-botones" style="margin-bottom:12px">
-      <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
-      <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
+      <div class="pc-tab-panel" data-tab-panel="dashboard" hidden>
+        <div class="pc-hero">
+          <div class="l">Cobrado hoy</div>
+          <div class="n" id="pcMontoHoy">—</div>
+        </div>
+
+        <div class="pc-chart-wrap">
+          <div class="pc-chart-title">Últimos 7 días · $ cobrado</div>
+          <svg id="pcChart" viewBox="0 0 280 90" class="pc-chart"></svg>
+        </div>
+
+        <div class="panel-stats" id="pcStats"></div>
+      </div>
+
+      <div class="pc-tab-panel" data-tab-panel="filtros" hidden>
+        <div class="pc-buscador">
+          <div class="pc-search-wrap">
+            <svg class="pc-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
+            <input type="text" id="pcBuscarTexto" placeholder="Buscar por comprobante o nombre del cliente" autocomplete="off">
+            <div class="pc-autocomplete" id="pcAutocomplete" hidden></div>
+          </div>
+          <div class="pc-filtro">
+            <input type="date" id="pcDesde">
+            <input type="date" id="pcHasta">
+          </div>
+          <div class="pc-filtro">
+            <select id="pcFiltroVeredicto">
+              <option value="">Todos los estados</option>
+              <option value="PENDIENTE_CONCILIACION">Aceptados limpios</option>
+              <option value="ALERTA">Alertas</option>
+              <option value="RECHAZADO">Rechazados</option>
+              <option value="DUPLICADO">Duplicados</option>
+            </select>
+          </div>
+          <div class="pc-filtro">
+            <button class="pc-btn-primary pressable" id="btnPcBuscar">Buscar</button>
+            <button class="pc-btn-ghost pressable" id="btnPcLimpiar">Limpiar filtros</button>
+          </div>
+        </div>
+
+        <div class="pc-resumen" id="pcResumenFiltro" hidden></div>
+
+        <div class="pc-movs-botones" style="margin-bottom:12px">
+          <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
+          <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
+        </div>
+        <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
+        <div id="pcMovs"></div>
+      </div>
+
     </div>
-    <div id="pcMovs"></div>
   </div>
 </div>
 
@@ -1999,9 +2033,13 @@ function estadoMovCss(veredicto){
   return 'bad'; // RECHAZADO y cualquier otro
 }
 
-function renderMovimientos(movs, mensajeVacio){
-  if(!movs || !movs.length){ $('pcMovs').innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
-  $('pcMovs').innerHTML = movs.slice().reverse().map(m=>{
+// contenedorId: el mismo render sirve para la pestaña "Hoy" (pcMovsHoy) y
+// la pestaña "Filtros" (pcMovs) -- son dos listas independientes ahora
+// (antes una sola se reusaba para las dos cosas, pisandose entre si).
+function renderMovimientos(contenedorId, movs, mensajeVacio){
+  const cont=$(contenedorId);
+  if(!movs || !movs.length){ cont.innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
+  cont.innerHTML = movs.slice().reverse().map(m=>{
     const estado=estadoMovCss(m.veredicto);
     const hora=formatearFechaEC(m.fecha, true);
     const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null].filter(Boolean).map(escapeHtml).join(' · ');
@@ -2052,15 +2090,36 @@ function hoyISOClient(){ return new Date(Date.now() - 5*3600*1000).toISOString()
 
 let movimientosMostrados = [];
 
+// Pestañas de "Mi cuenta": Plan / Hoy / Dashboard / Filtros. Es solo
+// mostrar/ocultar -- los datos ya estan todos en memoria desde el fetch de
+// abrirCuenta(), salvo "Filtros" que hace su propio fetch (buscarMovimientos())
+// la primera vez que se abre esa pestaña en esta sesion de "Mi cuenta".
+let pcFiltrosCargados=false;
+function cambiarPcTab(tab){
+  document.querySelectorAll('.pc-tab-btn').forEach(b=>{
+    const activo = b.dataset.tab===tab;
+    b.classList.toggle('active', activo);
+    b.setAttribute('aria-selected', activo ? 'true' : 'false');
+  });
+  document.querySelectorAll('.pc-tab-panel').forEach(p=>{ p.hidden = p.dataset.tabPanel!==tab; });
+  $('pcTabContent').scrollTop=0;
+  if(tab==='filtros' && !pcFiltrosCargados){ pcFiltrosCargados=true; buscarMovimientos(); }
+}
+document.querySelectorAll('.pc-tab-btn').forEach(b=>{
+  b.addEventListener('click', ()=>cambiarPcTab(b.dataset.tab));
+});
+
 async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
-  document.querySelector('.panel-card').scrollTop = 0; // por si quedo scrolleado de una apertura anterior
+  pcFiltrosCargados=false;
+  cambiarPcTab('plan');
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
   $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
   $('pcMontoHoy').textContent='—';
   $('pcChart').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
+  $('pcMovsHoy').innerHTML='';
   $('pcMovs').innerHTML='';
   $('pcMovsTitulo').textContent='Movimientos de hoy';
   if(!$('pcDesde').value){ $('pcDesde').value=hoyISOClient(); $('pcHasta').value=hoyISOClient(); }
@@ -2093,9 +2152,7 @@ async function abrirCuenta(){
       pstat(d.rechazados||0, 'Rechazados', 'no') +
       pstat('$'+(d.montoSemana||0).toFixed(2), 'Cobrado esta semana', 'amarillo');
 
-    movimientosMostrados = d.movimientosHoy || [];
-    renderMovimientos(movimientosMostrados);
-    renderResumenFiltro(movimientosMostrados);
+    renderMovimientos('pcMovsHoy', d.movimientosHoy || [], 'Todavía no has escaneado nada hoy.');
   }catch(e){
     $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
   }
@@ -2167,7 +2224,7 @@ async function buscarMovimientos(){
     const d=await res.json();
     if(!res.ok) throw new Error(d.error||'Error');
     movimientosMostrados = d.movimientosRango || [];
-    renderMovimientos(movimientosMostrados, hayFiltros ? 'No se encontraron movimientos con esos filtros.' : 'No hay movimientos en ese rango.');
+    renderMovimientos('pcMovs', movimientosMostrados, hayFiltros ? 'No se encontraron movimientos con esos filtros.' : 'No hay movimientos en ese rango.');
     renderResumenFiltro(movimientosMostrados);
   }catch(e){
     $('pcMovs').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
