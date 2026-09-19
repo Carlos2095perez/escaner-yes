@@ -402,6 +402,13 @@ canvas{display:none}
 .pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
   background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
+.pc-conciliar-panel{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:14px;padding:14px;margin-bottom:14px}
+.pc-conciliar-ayuda{font-size:11.5px;color:var(--muted);margin:0 0 10px}
+.pc-conciliar-campo{margin-bottom:10px}
+.pc-conciliar-campo label{display:block;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+.pc-conciliar-campo select{width:100%;padding:9px 10px;border-radius:8px;border:1.5px solid var(--azul-70);
+  background:rgba(255,255,255,.05);color:#fff;font-family:var(--inter);font-size:13px}
+.pc-conciliar-estado{font-size:12px;color:var(--muted);margin-top:8px}
 .pc-export-bloqueado{font-size:12px;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--azul-70);
   border-radius:12px;padding:10px 14px;margin-bottom:12px}
 .pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
@@ -482,6 +489,8 @@ canvas{display:none}
   .pc-uso-bar{background:#EEF0F5}
   .pc-vendedor-row{background:#fff;border-color:#E4E7F0}
   .pc-vendedor-row .nombre,.pc-vendedor-row .monto{color:#0A163D}
+  .pc-conciliar-panel{background:#fff;border-color:#E4E7F0}
+  .pc-conciliar-campo select{background:#F5F6FA;border-color:#E4E7F0;color:#0A163D}
   .pc-benef-item{border-bottom-color:#E4E7F0}
   .pc-benef-item .t{color:#0A163D}
   .pc-benef-item.off .t{color:#9AA1AA}
@@ -712,8 +721,24 @@ canvas{display:none}
         <div class="pc-movs-botones" id="pcExportarBotones" style="margin-bottom:12px">
           <button class="pc-mini-btn pressable" id="btnPcExcel">Descargar Excel</button>
           <button class="pc-mini-btn pressable" id="btnPcPdf">Descargar PDF</button>
+          <button class="pc-mini-btn pressable" id="btnPcConciliar">Conciliar extracto bancario</button>
+          <input type="file" id="inputExtracto" accept=".csv,.xlsx,.xls" hidden>
         </div>
-        <p class="pc-export-bloqueado" id="pcExportBloqueado" hidden>Exportar a PDF/Excel está disponible en los planes Negocio y Equipo.</p>
+        <p class="pc-export-bloqueado" id="pcExportBloqueado" hidden>Exportar a PDF/Excel y conciliar tu extracto bancario están disponibles en los planes Negocio y Equipo.</p>
+
+        <div class="pc-conciliar-panel" id="pcConciliarPanel" hidden>
+          <div class="pc-chart-title">Conciliar extracto bancario</div>
+          <p class="pc-conciliar-ayuda">Elegí qué columna de tu archivo es cada dato. Se cruza por monto exacto y fecha (± 3 días) contra tus comprobantes ya aceptados y todavía sin conciliar.</p>
+          <div class="pc-conciliar-campo"><label>Columna de fecha</label><select id="colFecha"></select></div>
+          <div class="pc-conciliar-campo"><label>Columna de monto</label><select id="colMonto"></select></div>
+          <div class="pc-conciliar-campo"><label>Columna de referencia (opcional)</label><select id="colReferencia"><option value="">— Ninguna —</option></select></div>
+          <div class="pc-filtro">
+            <button class="pc-btn-primary pressable" id="btnConfirmarConciliar">Conciliar</button>
+            <button class="pc-btn-ghost pressable" id="btnCancelarConciliar">Cancelar</button>
+          </div>
+          <p id="estadoConciliar" class="pc-conciliar-estado"></p>
+        </div>
+
         <div class="pc-chart-title" id="pcMovsTitulo">Movimientos de hoy</div>
         <div id="pcMovs"></div>
       </div>
@@ -2355,8 +2380,11 @@ async function abrirCuenta(){
     $('pcPlan').textContent = ETIQUETAS_PLAN[d.plan] || 'Individual';
     $('pcUso').innerHTML = pcUsoHTML(d);
     $('pcBenef').innerHTML = pcBenefHTML(d.plan);
-    $('pcExportarBotones').hidden = !d.puedeExportar;
-    $('pcExportBloqueado').hidden = !!d.puedeExportar;
+    $('pcExportarBotones').hidden = !(d.puedeExportar || d.puedeConciliar);
+    $('btnPcExcel').hidden = !d.puedeExportar;
+    $('btnPcPdf').hidden = !d.puedeExportar;
+    $('btnPcConciliar').hidden = !d.puedeConciliar;
+    $('pcExportBloqueado').hidden = !!(d.puedeExportar || d.puedeConciliar);
     $('pcVence').textContent = d.membresiaVencimiento
       ? ('Vence '+new Date(d.membresiaVencimiento).toLocaleDateString('es-EC',{day:'numeric',month:'short',year:'numeric'}))
       : 'Sin fecha de vencimiento';
@@ -2708,6 +2736,102 @@ $('btnPcExcel').addEventListener('click', async () => {
       XLSX.writeFile(wb, nombreArchivoXlsx);
     }
   }catch(e){ toast('No se pudo generar el Excel: '+e.message, 'error'); }
+});
+
+// --- Conciliar extracto bancario (Negocio/Equipo) ---
+// El archivo (CSV/Excel) se parsea ENTERO en el navegador con la misma
+// libreria XLSX que ya se usa para exportar -- el servidor nunca recibe
+// el archivo, solo las filas ya estructuradas que arma
+// filasParaConciliar() a partir de las columnas que la persona eligio.
+let extractoAoa = null;
+const PISTAS_COLUMNA = {
+  fecha: ['fecha','date'],
+  monto: ['monto','valor','credito','crédito','abono','haber','importe'],
+  referencia: ['descripcion','descripción','referencia','detalle','concepto','glosa'],
+};
+function adivinarColumna(headers, pistas){
+  const idx = headers.findIndex(h=>pistas.some(p=>String(h||'').toLowerCase().includes(p)));
+  return idx>=0 ? idx : 0;
+}
+function llenarSelectColumnas(selectId, headers, conVacio){
+  const sel=$(selectId);
+  sel.innerHTML = (conVacio?'<option value="">— Ninguna —</option>':'') +
+    headers.map((h,i)=>'<option value="'+i+'">'+escapeHtml(h || ('Columna '+(i+1)))+'</option>').join('');
+}
+$('btnPcConciliar').addEventListener('click', ()=>$('inputExtracto').click());
+$('inputExtracto').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  e.target.value = '';
+  if(!file) return;
+  try{
+    if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type:'array' });
+    const hoja = wb.Sheets[wb.SheetNames[0]];
+    extractoAoa = XLSX.utils.sheet_to_json(hoja, { header:1, raw:false, defval:'' }).filter(fila=>fila.some(c=>String(c).trim()!==''));
+    if(extractoAoa.length<2) throw new Error('El archivo no tiene filas con datos.');
+    const headers = extractoAoa[0];
+    llenarSelectColumnas('colFecha', headers, false);
+    llenarSelectColumnas('colMonto', headers, false);
+    llenarSelectColumnas('colReferencia', headers, true);
+    $('colFecha').value = adivinarColumna(headers, PISTAS_COLUMNA.fecha);
+    $('colMonto').value = adivinarColumna(headers, PISTAS_COLUMNA.monto);
+    const refIdx = headers.findIndex(h=>PISTAS_COLUMNA.referencia.some(p=>String(h||'').toLowerCase().includes(p)));
+    $('colReferencia').value = refIdx>=0 ? refIdx : '';
+    $('estadoConciliar').textContent = '';
+    $('pcConciliarPanel').hidden = false;
+  }catch(err){ toast('No se pudo leer el archivo: '+err.message, 'error'); }
+});
+$('btnCancelarConciliar').addEventListener('click', ()=>{ $('pcConciliarPanel').hidden=true; extractoAoa=null; });
+
+// "1.234,56" (coma decimal) o "$1,234.56" (coma de miles) -- se limpia
+// todo menos digitos/puntos/coma y se asume el ULTIMO separador como el
+// decimal (es como se distingue una convencion de la otra sin adivinar
+// el pais del archivo).
+function parsearMontoExtracto(txt){
+  let s = String(txt||'').replace(/[^0-9.,-]/g,'');
+  const ultimaComa = s.lastIndexOf(','), ultimoPunto = s.lastIndexOf('.');
+  if(ultimaComa > ultimoPunto){ s = s.replace(/\./g,'').replace(',','.'); }
+  else { s = s.replace(/,/g,''); }
+  return Number(s);
+}
+function parsearFechaExtracto(txt){
+  const s = String(txt||'').trim();
+  if(!s) return '';
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+'-'+m[2]+'-'+m[3];
+  m = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? '' : d.toISOString().slice(0,10);
+}
+$('btnConfirmarConciliar').addEventListener('click', async ()=>{
+  if(!extractoAoa){ return; }
+  const idxFecha = Number($('colFecha').value), idxMonto = Number($('colMonto').value);
+  const idxRef = $('colReferencia').value===''? null : Number($('colReferencia').value);
+  const filas = extractoAoa.slice(1).map(fila=>({
+    fecha: parsearFechaExtracto(fila[idxFecha]),
+    monto: parsearMontoExtracto(fila[idxMonto]),
+    referencia: idxRef!=null ? String(fila[idxRef]||'') : undefined,
+  })).filter(f=>f.fecha && f.monto>0);
+  if(!filas.length){ $('estadoConciliar').textContent = 'No se encontraron filas válidas con esas columnas.'; return; }
+
+  $('estadoConciliar').textContent = 'Conciliando '+filas.length+' filas...';
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const res = await fetch(NUVO_API+'/api/account/conciliar', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
+      body: JSON.stringify({ filas }),
+    });
+    const d = await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    $('estadoConciliar').textContent = d.conciliados+' de '+d.totalFilas+' filas se conciliaron con un comprobante.'+
+      (d.sinMatch.length ? ' '+d.sinMatch.length+' no encontraron comprobante correspondiente.' : '');
+    extractoAoa = null;
+    buscarMovimientos();
+  }catch(err){ $('estadoConciliar').textContent = 'Error: '+err.message; }
 });
 
 // Registra cada intento de escaneo (aceptado o no) para las estadisticas de
