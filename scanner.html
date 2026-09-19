@@ -765,7 +765,7 @@ canvas{display:none}
 <script>
 // Se llena despues del login con /api/config/validacion (editable desde el
 // panel admin) -- ya no queda fijo en el codigo del escaner.
-let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36};
+let CONFIG={NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', CUENTA_DESTINO_SUFIJOS:[], BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36};
 const RE_UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const RE_HASH=/^[0-9a-f]{16,}$/i;
 const RE_COMPROBANTE=/^[0-9A-Za-z]{5,}$/;
@@ -1048,12 +1048,16 @@ async function verificarYAplicar(session, segundoPlano){
 
     // Config de validacion (a que cuenta/nombre debe ir el comprobante),
     // editable desde el panel admin -- se pide en cada verificacion.
-    let cfg={ NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36, MODO_ESCANEO:'monto' };
+    let cfg={ NOMBRE_NEGOCIO:'', CUENTA_DESTINO_SUFIJO:'', CUENTA_DESTINO_SUFIJOS:[], BENEFICIARIO_CLAVES:[], VENTANA_HORAS:36, MODO_ESCANEO:'monto' };
     try{
       const cfgResp=await fetch(NUVO_API+'/api/config/validacion', { headers:{ Authorization:'Bearer '+session.access_token } });
       const c=await cfgResp.json();
       if(cfgResp.ok){
         cfg={ NOMBRE_NEGOCIO: c.nombreNegocio||'', CUENTA_DESTINO_SUFIJO: c.cuentaDestinoSufijo||'',
+              // Multi-cuenta (Equipo, hasta 3): el QR es valido si la cuenta
+              // destino calza con CUALQUIERA de las cuentas configuradas --
+              // ver validarLocal() mas abajo.
+              CUENTA_DESTINO_SUFIJOS: c.cuentaDestinoSufijos||[],
               // El beneficiario del comprobante se compara en mayusculas (ver
               // validarLocal) -- si no, el nombre que el admin tipeo con
               // mayusculas/minusculas normales nunca coincide.
@@ -1934,7 +1938,9 @@ function validarLocal(d, montoEsperado){
   // La cuenta destino viene ENMASCARADA dentro del propio QR (ej. "******0024"):
   // el banco/DeUna nunca expone el número completo, ni al comercio ni en el texto
   // del código. Lo único verificable son los últimos digitos visibles.
-  if(!String(d.ctaDestino||'').endsWith(CONFIG.CUENTA_DESTINO_SUFIJO))
+  // Multi-cuenta (Equipo, hasta 3, ver verificarYAplicar()): valido si
+  // calza con CUALQUIERA de las cuentas configuradas, no solo la primera.
+  if(!(CONFIG.CUENTA_DESTINO_SUFIJOS.length ? CONFIG.CUENTA_DESTINO_SUFIJOS : [CONFIG.CUENTA_DESTINO_SUFIJO]).some(suf=>String(d.ctaDestino||'').endsWith(suf)))
     m.push('La cuenta destino no es '+(CONFIG.NOMBRE_NEGOCIO||'la del negocio')+' (...'+String(d.ctaDestino).slice(-4)+').');
   const benef=String(d.beneficiario||'').toUpperCase();
   if(!CONFIG.BENEFICIARIO_CLAVES.some(k=>benef.indexOf(k)>=0))
