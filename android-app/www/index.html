@@ -448,6 +448,8 @@ canvas{display:none}
 .pc-mov-linea{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
 .pc-mov-txt{flex:1;text-align:left}
+.pc-mov-conciliado{font-size:9.5px;font-weight:700;color:var(--green);background:rgba(0,210,106,.14);
+  padding:2px 7px;border-radius:999px;flex-shrink:0;white-space:nowrap}
 .pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
 .pc-mov-monto.ok{color:var(--green-hi)}
 .pc-mov-monto.warn{color:var(--amber-hi)}
@@ -734,6 +736,11 @@ canvas{display:none}
             <div class="pc-conciliar-campo"><label>Columna de monto</label><select id="colMonto"></select></div>
             <div class="pc-conciliar-campo"><label>Columna de referencia (opcional)</label><select id="colReferencia"><option value="">— Ninguna —</option></select></div>
           </div>
+          <div class="pc-conciliar-campo">
+            <label>N° de cuenta de este extracto *</label>
+            <input type="text" id="cuentaExtracto" placeholder="Ej. 2203044710 o los últimos 4 dígitos" inputmode="numeric">
+          </div>
+          <p class="pc-conciliar-ayuda" style="margin-top:-4px">Confirmá que este número corresponde a tu cuenta configurada en NUVO — si no coincide, no se concilia nada (evita mezclar extractos de otra cuenta por error).</p>
           <div class="pc-filtro">
             <button class="pc-btn-primary pressable" id="btnConfirmarConciliar">Conciliar</button>
             <button class="pc-btn-ghost pressable" id="btnCancelarConciliar">Cancelar</button>
@@ -2294,8 +2301,9 @@ function renderMovimientos(contenedorId, movs, mensajeVacio){
     const estado=estadoMovCss(m.veredicto);
     const hora=formatearFechaEC(m.fecha, true);
     const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null].filter(Boolean).map(escapeHtml).join(' · ');
+    const chipConciliado=m.conciliado?'<span class="pc-mov-conciliado" title="Conciliado con el extracto bancario">✓ Conciliado</span>':'';
     return '<div class="pc-mov-row '+estado+'"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
-      '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+
+      '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+chipConciliado+
       '<span class="pc-mov-monto '+estado+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
       (detalle?'<div class="pc-mov-detalle">'+detalle+'</div>':'')+'</div>';
   }).join('');
@@ -2788,6 +2796,13 @@ async function extraerTextoPdf(arrayBuffer){
   }
   return texto;
 }
+// Busca "cuenta N° 2203044710" (o variantes: Nro, No, sin punto/acento)
+// cerca del encabezado del extracto -- best-effort, si no lo encuentra el
+// campo queda vacio y la persona lo escribe a mano.
+function adivinarCuentaExtracto(texto){
+  const m = texto.match(/cuenta\s*(?:bancaria\s*)?N[°ºo]?r?o?\.?\s*[:\-]?\s*(\d{6,})/i);
+  return m ? m[1] : '';
+}
 function parsearExtractoPdf(texto){
   const fechas = [...texto.matchAll(RE_FECHA_EXTRACTO_PDF)];
   const filas = [];
@@ -2812,6 +2827,7 @@ $('inputExtracto').addEventListener('change', async (e)=>{
   e.target.value = '';
   if(!file) return;
   extractoAoa = null; filasExtraidasPdf = null;
+  $('cuentaExtracto').value = '';
   try{
     const esPdf = /\.pdf$/i.test(file.name);
     if(esPdf){
@@ -2820,6 +2836,7 @@ $('inputExtracto').addEventListener('change', async (e)=>{
       filasExtraidasPdf = parsearExtractoPdf(texto);
       if(!filasExtraidasPdf.length) throw new Error('No se detectaron movimientos con monto positivo en el PDF (por ahora solo se probó con el formato de Banco Pichincha).');
       $('pcConciliarColumnas').hidden = true;
+      $('cuentaExtracto').value = adivinarCuentaExtracto(texto);
       $('pcConciliarAyuda').textContent = 'Se detectaron '+filasExtraidasPdf.length+' movimientos con abono en el PDF. Se cruzan por monto exacto y fecha (± 3 días) contra tus comprobantes ya aceptados y todavía sin conciliar.';
     }else{
       if(!window.XLSX) throw new Error('No se pudo cargar la librería de Excel (revisa tu conexión).');
@@ -2881,6 +2898,8 @@ $('btnConfirmarConciliar').addEventListener('click', async ()=>{
     })).filter(f=>f.fecha && f.monto>0);
   }
   if(!filas.length){ $('estadoConciliar').textContent = 'No se encontraron filas válidas con esas columnas.'; return; }
+  const cuentaExtracto = $('cuentaExtracto').value.trim();
+  if(!cuentaExtracto){ $('estadoConciliar').textContent = 'Falta el N° de cuenta del extracto -- es obligatorio para evitar conciliar contra la cuenta equivocada.'; return; }
 
   $('estadoConciliar').textContent = 'Conciliando '+filas.length+' filas...';
   try{
@@ -2889,7 +2908,7 @@ $('btnConfirmarConciliar').addEventListener('click', async ()=>{
     const res = await fetch(NUVO_API+'/api/account/conciliar', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+session.access_token },
-      body: JSON.stringify({ filas }),
+      body: JSON.stringify({ filas, cuentaExtracto }),
     });
     const d = await res.json();
     if(!res.ok) throw new Error(d.error||'Error');
