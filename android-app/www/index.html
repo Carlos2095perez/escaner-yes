@@ -782,6 +782,7 @@ canvas{display:none}
             <div class="pc-conciliar-campo"><label>Columna de fecha</label><select id="colFecha"></select></div>
             <div class="pc-conciliar-campo"><label>Columna de monto</label><select id="colMonto"></select></div>
             <div class="pc-conciliar-campo"><label>Columna de referencia (opcional)</label><select id="colReferencia"><option value="">— Ninguna —</option></select></div>
+            <div class="pc-conciliar-campo"><label>Columna de tipo C/D (opcional -- si el monto no trae signo)</label><select id="colTipo"><option value="">— Ninguna, uso el signo del monto —</option></select></div>
           </div>
           <div class="pc-conciliar-campo">
             <label>N° de cuenta de este extracto *</label>
@@ -2880,14 +2881,28 @@ const PISTAS_COLUMNA = {
   fecha: ['fecha','date'],
   monto: ['monto','valor','credito','crédito','abono','haber','importe'],
   referencia: ['descripcion','descripción','referencia','detalle','concepto','glosa'],
+  // Extractos de cuenta EMPRESA (a diferencia de la personal): el monto
+  // viene siempre positivo, sin signo -- lo unico que distingue un
+  // credito (pago recibido) de un debito (cheque, comision, etc.) es
+  // esta columna de tipo ("C"/"D", o "Credito"/"Debito").
+  tipo: ['tipo','c/d','dc','naturaleza'],
 };
+// Valores que cuentan como "credito" en la columna Tipo -- case/acento
+// insensible. Si el extracto usa otra palabra que no esta en esta lista,
+// la persona puede dejar "Columna de tipo" en "Ninguna" y el filtro
+// vuelve a ser el signo del monto (como antes).
+const VALORES_TIPO_CREDITO = ['c','credito','abono','deposito','haber'];
+function esTipoCredito(v){
+  const norm = String(v||'').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  return VALORES_TIPO_CREDITO.includes(norm);
+}
 function adivinarColumna(headers, pistas){
   const idx = headers.findIndex(h=>pistas.some(p=>String(h||'').toLowerCase().includes(p)));
   return idx>=0 ? idx : 0;
 }
-function llenarSelectColumnas(selectId, headers, conVacio){
+function llenarSelectColumnas(selectId, headers, conVacio, textoVacio){
   const sel=$(selectId);
-  sel.innerHTML = (conVacio?'<option value="">— Ninguna —</option>':'') +
+  sel.innerHTML = (conVacio?'<option value="">'+(textoVacio||'— Ninguna —')+'</option>':'') +
     headers.map((h,i)=>'<option value="'+i+'">'+escapeHtml(h || ('Columna '+(i+1)))+'</option>').join('');
 }
 
@@ -2918,6 +2933,15 @@ async function extraerTextoPdf(arrayBuffer){
 // campo queda vacio y la persona lo escribe a mano.
 function adivinarCuentaExtracto(texto){
   const m = texto.match(/cuenta\s*(?:bancaria\s*)?N[°ºo]?r?o?\.?\s*[:\-]?\s*(\d{6,})/i);
+  return m ? m[1] : '';
+}
+// Para CSV/Excel: varios exportadores de banco nombran el archivo con los
+// ultimos digitos de la cuenta al final (ej. "mov-21-09-202621XXXX0024.xlsx")
+// -- si el nombre termina en digitos, es un candidato razonable para
+// precargar el campo (que la persona igual tiene que confirmar).
+function adivinarCuentaDeNombreArchivo(nombreArchivo){
+  const sinExtension = String(nombreArchivo||'').replace(/\.[^.]+$/, '');
+  const m = sinExtension.match(/(\d{4,})$/);
   return m ? m[1] : '';
 }
 function parsearExtractoPdf(texto){
@@ -2966,10 +2990,19 @@ $('inputExtracto').addEventListener('change', async (e)=>{
       llenarSelectColumnas('colFecha', headers, false);
       llenarSelectColumnas('colMonto', headers, false);
       llenarSelectColumnas('colReferencia', headers, true);
+      llenarSelectColumnas('colTipo', headers, true, '— Ninguna, uso el signo del monto —');
       $('colFecha').value = adivinarColumna(headers, PISTAS_COLUMNA.fecha);
       $('colMonto').value = adivinarColumna(headers, PISTAS_COLUMNA.monto);
       const refIdx = headers.findIndex(h=>PISTAS_COLUMNA.referencia.some(p=>String(h||'').toLowerCase().includes(p)));
       $('colReferencia').value = refIdx>=0 ? refIdx : '';
+      // Solo se sugiere la columna de tipo si de verdad tiene pinta de
+      // ser eso (valores cortos tipo "C"/"D") -- si no, mejor dejarla en
+      // "Ninguna" que adivinar mal y filtrar todo por error.
+      const tipoIdx = headers.findIndex(h=>PISTAS_COLUMNA.tipo.some(p=>String(h||'').toLowerCase().includes(p)));
+      if(tipoIdx>=0 && extractoAoa.slice(1,6).every(fila=>String(fila[tipoIdx]||'').trim().length<=12)){
+        $('colTipo').value = tipoIdx;
+      }
+      $('cuentaExtracto').value = adivinarCuentaDeNombreArchivo(file.name);
       $('pcConciliarColumnas').hidden = false;
       $('pcConciliarAyuda').textContent = 'Elegí qué columna de tu archivo es cada dato. Se cruza por monto exacto y fecha (± 3 días) contra tus comprobantes ya aceptados y todavía sin conciliar.';
     }
@@ -3008,11 +3041,21 @@ $('btnConfirmarConciliar').addEventListener('click', async ()=>{
   }else{
     const idxFecha = Number($('colFecha').value), idxMonto = Number($('colMonto').value);
     const idxRef = $('colReferencia').value===''? null : Number($('colReferencia').value);
-    filas = extractoAoa.slice(1).map(fila=>({
-      fecha: parsearFechaExtracto(fila[idxFecha]),
-      monto: parsearMontoExtracto(fila[idxMonto]),
-      referencia: idxRef!=null ? String(fila[idxRef]||'') : undefined,
-    })).filter(f=>f.fecha && f.monto>0);
+    const idxTipo = $('colTipo').value===''? null : Number($('colTipo').value);
+    filas = extractoAoa.slice(1)
+      // Cuentas empresa: el monto viene siempre positivo, la columna
+      // Tipo (C/D) es la unica forma de saber si es un credito -- si no
+      // se eligio esa columna, se sigue usando el signo del monto
+      // (cuentas personales, donde el debito trae "-").
+      .filter(fila => idxTipo!=null ? esTipoCredito(fila[idxTipo]) : true)
+      .map(fila=>{
+        const montoBruto = parsearMontoExtracto(fila[idxMonto]);
+        return {
+          fecha: parsearFechaExtracto(fila[idxFecha]),
+          monto: idxTipo!=null ? Math.abs(montoBruto) : montoBruto,
+          referencia: idxRef!=null ? String(fila[idxRef]||'') : undefined,
+        };
+      }).filter(f=>f.fecha && f.monto>0);
   }
   if(!filas.length){ $('estadoConciliar').textContent = 'No se encontraron filas válidas con esas columnas.'; return; }
   const cuentaExtracto = $('cuentaExtracto').value.trim();
