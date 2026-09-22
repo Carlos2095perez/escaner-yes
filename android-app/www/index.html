@@ -2928,11 +2928,11 @@ async function extraerTextoPdf(arrayBuffer){
   }
   return texto;
 }
-// Busca "cuenta N° 2203044710" (o variantes: Nro, No, sin punto/acento)
-// cerca del encabezado del extracto -- best-effort, si no lo encuentra el
-// campo queda vacio y la persona lo escribe a mano.
+// Busca "cuenta N° 2203044710" (personal) o "Cuenta: 2100270024" (empresa,
+// sin "N°") cerca del encabezado del extracto -- best-effort, si no lo
+// encuentra el campo queda vacio y la persona lo escribe a mano.
 function adivinarCuentaExtracto(texto){
-  const m = texto.match(/cuenta\s*(?:bancaria\s*)?N[°ºo]?r?o?\.?\s*[:\-]?\s*(\d{6,})/i);
+  const m = texto.match(/cuenta\s*(?:bancaria\s*)?(?:N[°ºo]?r?o?\.?)?\s*[:\-]?\s*(\d{6,})/i);
   return m ? m[1] : '';
 }
 // Para CSV/Excel: varios exportadores de banco nombran el archivo con los
@@ -2944,7 +2944,7 @@ function adivinarCuentaDeNombreArchivo(nombreArchivo){
   const m = sinExtension.match(/(\d{4,})$/);
   return m ? m[1] : '';
 }
-function parsearExtractoPdf(texto){
+function parsearExtractoPdfPersonal(texto){
   const fechas = [...texto.matchAll(RE_FECHA_EXTRACTO_PDF)];
   const filas = [];
   for(let i=0;i<fechas.length;i++){
@@ -2960,6 +2960,39 @@ function parsearExtractoPdf(texto){
     filas.push({ fecha, monto, referencia: bloque.replace(/\s+/g,' ').trim().slice(0,80) });
   }
   return filas;
+}
+// Formato empresa/negocio (Pichincha): fecha sin hora ("21/09/2026") y
+// montos SIN "$" (solo "1,812.75"), con una columna "Tipo" (C/D) aparte que
+// es la unica forma de distinguir credito de debito (a diferencia del
+// formato personal, aqui el monto siempre va sin signo). Se identifica un
+// monto como el numero con dos decimales (eso lo distingue de los codigos
+// de transaccion / numeros de documento, que son enteros); se exige que el
+// bloque tenga la letra "C" seguida de un digito (a veces pegada a la
+// palabra anterior, ej. "FACTURAC 175582188") para aceptarlo como credito.
+const RE_FECHA_EXTRACTO_PDF_EMPRESA = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g;
+function parsearExtractoPdfEmpresa(texto){
+  const fechas = [...texto.matchAll(RE_FECHA_EXTRACTO_PDF_EMPRESA)];
+  const filas = [];
+  for(let i=0;i<fechas.length;i++){
+    const m = fechas[i];
+    const desde = m.index + m[0].length;
+    const hasta = i+1<fechas.length ? fechas[i+1].index : texto.length;
+    const bloque = texto.slice(desde, hasta);
+    const montos = bloque.match(/\d[\d,]*\.\d{2}/g);
+    if(!montos || montos.length<2) continue;
+    const tipo = bloque.match(/(C|D)\s+\d/);
+    if(!tipo || tipo[1]!=='C') continue;
+    const monto = parsearMontoExtracto(montos[0]);
+    if(!(monto>0)) continue;
+    const fecha = m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+    filas.push({ fecha, monto, referencia: bloque.replace(/\s+/g,' ').trim().slice(0,80) });
+  }
+  return filas;
+}
+function parsearExtractoPdf(texto){
+  const filas = parsearExtractoPdfPersonal(texto);
+  if(filas.length) return filas;
+  return parsearExtractoPdfEmpresa(texto);
 }
 
 $('btnPcConciliar').addEventListener('click', ()=>$('inputExtracto').click());
