@@ -332,13 +332,22 @@ canvas{display:none}
 .doc-table-wrap tr:first-child td{font-family:var(--sora);font-weight:700;background:#F5F6FA}
 .doc-viewer-msg{color:var(--muted);font-size:13px;text-align:center;padding:40px 20px}
 
-.pc-tabs{flex:0 0 auto;display:flex;gap:4px;padding:10px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
-.pc-tab-btn{flex:1;font-family:var(--sora);font-weight:700;font-size:12.5px;color:var(--muted);
-  background:transparent;border:0;border-radius:12px;padding:9px 4px;cursor:pointer;
+/* Barra de navegacion de "Mi cuenta": vive ABAJO (como cualquier tab bar
+   movil), no arriba -- ultimo hijo de .panel-card en el HTML, el orden del
+   flex column ya la deja al fondo sin position:absolute. */
+.pc-tabs{flex:0 0 auto;display:flex;gap:2px;padding:6px 8px calc(env(safe-area-inset-bottom) + 6px);
+  border-top:1px solid rgba(255,255,255,.08);background:rgba(6,13,38,.5)}
+.pc-tab-btn{flex:1 1 0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font-family:var(--sora);font-weight:700;font-size:10.5px;color:var(--muted);
+  background:transparent;border:0;border-radius:14px;padding:8px 2px;cursor:pointer;
   transition:background .15s var(--ease-tap),color .15s var(--ease-tap)}
+.pc-tab-btn svg{width:21px;height:21px}
 .pc-tab-btn.active{background:var(--violeta);color:#fff}
 
-.pc-tab-content{flex:1 1 auto;min-height:0;overflow-y:auto;padding:20px 20px calc(env(safe-area-inset-bottom) + 24px)}
+.pc-tab-content{flex:1 1 auto;min-height:0;overflow-y:auto;padding:20px 20px 24px}
+
+.pc-titulo{font-family:var(--sora);font-weight:800;font-size:21px;margin-bottom:4px}
+.pc-subtitulo{font-size:13px;color:var(--muted);margin-bottom:18px}
 
 /* Membresia: su propia tarjeta destacada, no un badge pequeno. */
 .pc-membresia{background:linear-gradient(135deg,var(--violeta) 0%,#3B2A78 75%);border-radius:16px;padding:18px 20px;
@@ -424,9 +433,9 @@ canvas{display:none}
 
 .pc-movs-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .pc-movs-head .pc-chart-title{margin-bottom:0}
-.pc-movs-botones{display:flex;gap:8px}
-.pc-mini-btn{pointer-events:auto;font-family:var(--sora);font-weight:700;font-size:11px;color:#fff;
-  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:6px 12px;border-radius:999px;cursor:pointer}
+.pc-movs-botones{display:flex;flex-wrap:wrap;gap:8px}
+.pc-mini-btn{pointer-events:auto;flex:1 1 auto;min-width:150px;font-family:var(--sora);font-weight:700;font-size:12px;color:#fff;
+  background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.24);padding:10px 14px;border-radius:999px;cursor:pointer}
 .pc-mini-btn:active{transform:scale(.95)}
 .pc-conciliar-panel{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:14px;padding:14px;margin-bottom:14px}
 .pc-conciliar-ayuda{font-size:11.5px;color:var(--muted);margin:0 0 10px}
@@ -438,7 +447,7 @@ canvas{display:none}
 .pc-export-bloqueado{font-size:12px;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--azul-70);
   border-radius:12px;padding:10px 14px;margin-bottom:12px}
 .pc-chart-label{fill:rgba(255,255,255,.55);font-size:9px;font-family:Inter,sans-serif}
-.pc-buscador{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:16px;padding:14px;margin-bottom:12px}
+.pc-buscador{background:rgba(255,255,255,.04);border:1px solid var(--azul-70);border-radius:16px;padding:16px;margin-bottom:14px}
 .pc-search-wrap{position:relative;margin-bottom:8px}
 .pc-search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);pointer-events:none}
 .pc-search-wrap input{pointer-events:auto;width:100%;padding:10px 12px 10px 36px;font-size:13px;border-radius:8px;
@@ -449,40 +458,78 @@ canvas{display:none}
 .pc-autocomplete-item{pointer-events:auto;padding:10px 12px;font-size:13px;color:#fff;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.07)}
 .pc-autocomplete-item:last-child{border-bottom:0}
 .pc-autocomplete-item:hover,.pc-autocomplete-item:active{background:rgba(255,255,255,.08)}
-.pc-filtro{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.pc-filtro{display:flex;gap:9px;align-items:stretch;margin-bottom:10px;flex-wrap:wrap}
 .pc-filtro:last-child{margin-bottom:0}
-.pc-filtro input,.pc-filtro select{pointer-events:auto;flex:1;min-width:110px;padding:9px 10px;font-size:13px;border-radius:8px;
+.pc-filtro input,.pc-filtro select{pointer-events:auto;flex:1;min-width:110px;padding:11px 12px;font-size:13.5px;border-radius:10px;
   border:1px solid var(--azul-70);background:rgba(255,255,255,.06);color:#fff;font-family:var(--inter)}
 .pc-filtro select{min-width:130px}
 .pc-filtro input::placeholder{color:var(--muted)}
-.pc-btn-primary{pointer-events:auto;flex:1;font-family:var(--sora);font-weight:700;font-size:13px;color:#fff;
-  background:var(--violeta);border:1px solid var(--violeta);padding:10px 14px;border-radius:999px;cursor:pointer}
+/* Desde/Hasta con su propia etiqueta arriba -- antes eran dos <input
+   type=date> sueltos, sin decir cual era cual. */
+.pc-filtro-fechas label{flex:1;min-width:110px;display:flex;flex-direction:column;gap:4px;
+  font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.pc-filtro-fechas input{width:100%}
+.pc-btn-primary{pointer-events:auto;flex:1 1 auto;min-width:130px;font-family:var(--sora);font-weight:700;font-size:14px;color:#fff;
+  background:var(--violeta);border:1px solid var(--violeta);padding:12px 14px;border-radius:999px;cursor:pointer}
 .pc-btn-primary:active{transform:scale(.97)}
-.pc-btn-ghost{pointer-events:auto;flex:1;font-family:var(--sora);font-weight:600;font-size:13px;color:var(--muted);
-  background:transparent;border:1px solid var(--azul-70);padding:10px 14px;border-radius:999px;cursor:pointer}
+.pc-btn-ghost{pointer-events:auto;flex:1 1 auto;min-width:130px;font-family:var(--sora);font-weight:600;font-size:14px;color:var(--muted);
+  background:transparent;border:1px solid var(--azul-70);padding:12px 14px;border-radius:999px;cursor:pointer}
 .pc-btn-ghost:active{transform:scale(.97)}
 .pc-resumen{display:flex;gap:8px;margin-bottom:14px}
 .pc-resumen .item{flex:1;background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:12px;padding:10px;text-align:center}
 .pc-resumen .item .n{font-family:var(--sora);font-weight:700;font-size:15px}
 .pc-resumen .item .l{font-size:10px;color:var(--muted);margin-top:2px;text-transform:uppercase;letter-spacing:.03em}
-.pc-mov-row{padding:9px 0 9px 10px;font-size:13px;border-bottom:1px solid rgba(255,255,255,.09);border-left:3px solid transparent}
-.pc-mov-row:last-child{border-bottom:0}
-.pc-mov-row.ok{border-left-color:var(--green)}
-.pc-mov-row.warn{border-left-color:var(--amber)}
-.pc-mov-row.bad{border-left-color:var(--red)}
-.pc-mov-row.dup{border-left-color:var(--azul-70)}
-.pc-mov-linea{display:flex;justify-content:space-between;align-items:center;gap:10px}
-.pc-mov-hora{color:var(--muted);font-size:11.5px;flex-shrink:0}
-.pc-mov-txt{flex:1;text-align:left}
-.pc-mov-conciliado{font-size:9.5px;font-weight:700;color:var(--green);background:rgba(0,210,106,.14);
-  padding:2px 7px;border-radius:999px;flex-shrink:0;white-space:nowrap}
-.pc-mov-monto{font-family:var(--sora);font-weight:700;flex-shrink:0}
-.pc-mov-monto.ok{color:var(--green-hi)}
-.pc-mov-monto.warn{color:var(--amber-hi)}
-.pc-mov-monto.bad{color:#ff9aa4}
-.pc-mov-monto.dup{color:var(--muted)}
-.pc-mov-detalle{margin-top:3px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:14px 0}
+.pc-mov-vacio{color:var(--muted);font-size:13px;text-align:center;padding:30px 0}
+
+/* Chips de estado (Escaneos): solo verde/amarillo/rojo -- nada de morado,
+   "Duplicado" y "Rechazado" comparten rojo (los dos son graves), igual que
+   ya se decidio para la pantalla de resultado del escaneo. */
+.esc-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;margin-bottom:14px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.esc-chips::-webkit-scrollbar{display:none}
+.esc-chip{flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:9px 13px;border-radius:999px;
+  border:1.5px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:var(--muted);
+  font-family:var(--sora);font-weight:700;font-size:12px;white-space:nowrap;cursor:pointer;
+  transition:background .15s var(--ease-tap),color .15s var(--ease-tap),border-color .15s var(--ease-tap)}
+.esc-chip svg{width:14px;height:14px;flex-shrink:0}
+.esc-chip-count{background:rgba(255,255,255,.14);border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:800}
+.esc-chip.todos svg{color:var(--violeta)}
+.esc-chip.verde svg{color:var(--green)}
+.esc-chip.amarillo svg{color:var(--amber)}
+.esc-chip.rojo svg{color:var(--red)}
+.esc-chip.active,.esc-chip.active svg{color:#fff}
+.esc-chip.active .esc-chip-count{background:rgba(255,255,255,.28)}
+.esc-chip.todos.active{background:var(--violeta);border-color:var(--violeta)}
+.esc-chip.verde.active{background:var(--green);border-color:var(--green)}
+.esc-chip.amarillo.active{background:var(--amber);border-color:var(--amber)}
+.esc-chip.rojo.active{background:var(--red);border-color:var(--red)}
+
+/* Card de cada comprobante -- borde izquierdo de color + badge de estado,
+   como el mockup. Un solo componente (escCardHTML) para Escaneos e
+   Historial, asi los dos se ven iguales. */
+.esc-card{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.06);
+  border:1px solid var(--azul-70);border-left:4px solid transparent;border-radius:14px;
+  padding:12px;margin-bottom:9px}
+.esc-card.verde{border-left-color:var(--green)}
+.esc-card.amarillo{border-left-color:var(--amber)}
+.esc-card.rojo{border-left-color:var(--red)}
+.esc-fecha{flex:0 0 auto;width:52px}
+.esc-fecha .hora{font-size:11px;font-weight:700;color:#fff}
+.esc-fecha .dia{font-size:9.5px;color:var(--muted);margin-top:1px}
+.esc-info{flex:1 1 auto;min-width:0}
+.esc-info .nombre{font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.esc-info .doc{font-size:10.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.esc-derecha{flex:0 0 auto;text-align:right}
+.esc-badge{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;
+  padding:3px 9px;border-radius:999px;white-space:nowrap}
+.esc-badge svg{width:10px;height:10px;flex-shrink:0}
+.esc-badge.verde{background:rgba(0,210,106,.16);color:var(--green-hi)}
+.esc-badge.amarillo{background:rgba(255,159,28,.18);color:var(--amber-hi)}
+.esc-badge.rojo{background:rgba(255,65,82,.18);color:#ff9aa4}
+.esc-monto{font-family:var(--sora);font-weight:800;font-size:14px;margin-top:5px}
+.esc-monto.verde{color:var(--green-hi)}
+.esc-monto.amarillo{color:var(--amber-hi)}
+.esc-monto.rojo{color:#ff9aa4}
+.esc-monto.gris{color:var(--muted)}
 
 .powered{pointer-events:none;position:absolute;bottom:calc(env(safe-area-inset-bottom) + 12px);left:0;right:0;
   text-align:center;font-family:var(--sora);font-size:10.5px;letter-spacing:.08em;color:rgba(255,255,255,.28)}
@@ -506,8 +553,9 @@ canvas{display:none}
   .panel-head{border-bottom-color:#E4E7F0}
   .panel-head h3{color:#0A163D}
   .panel-close{background:rgba(10,22,61,.08);color:#0A163D}
-  .pc-tabs{border-bottom-color:#E4E7F0}
-  .pc-tab-btn{color:#5A6076}
+  .pc-tabs{border-top-color:#E4E7F0;background:#fff}
+  .pc-tab-btn{color:#9AA1AA}
+  .pc-subtitulo{color:#5A6076}
   .pstat{background:#fff;border-color:#E4E7F0}
   .pstat .n{color:#0A163D}
   .pc-semaforo-card{background:#fff;border-color:#E4E7F0}
@@ -527,9 +575,18 @@ canvas{display:none}
   .pc-benef-item.off .ic{background:#F0F1F5}
   .pc-benef-item .plan-req{background:#F0F1F5}
   .pc-chart-title{color:#5A6076}
-  .pc-mov-row{border-bottom-color:#E4E7F0}
-  .pc-mov-hora,.pc-mov-txt{color:#0A163D}
-  .pc-mov-detalle{color:#5A6076}
+  .esc-chip{background:#fff;border-color:#E4E7F0;color:#5A6076}
+  .esc-card{background:#fff;border-color:#E4E7F0;box-shadow:0 2px 10px -4px rgba(10,22,61,.1)}
+  .esc-fecha .hora,.esc-info .nombre{color:#0A163D}
+  .esc-fecha .dia{color:#9AA1AA}
+  .esc-info .doc{color:#5A6076}
+  .esc-badge.verde{background:#E8FBF1;color:#049656}
+  .esc-badge.amarillo{background:#FFF4E2;color:#93690A}
+  .esc-badge.rojo{background:#FFE9EC;color:#C21E3A}
+  .esc-monto.verde{color:#049656}
+  .esc-monto.amarillo{color:#93690A}
+  .esc-monto.rojo{color:#C21E3A}
+  .esc-monto.gris{color:#9AA1AA}
   .pc-mini-btn{background:#fff;color:var(--violeta);border-color:var(--violeta)}
   .pc-export-bloqueado{background:#fff;border-color:#E4E7F0;color:#5A6076}
   .pc-chart-label{fill:rgba(10,22,61,.55)}
@@ -662,13 +719,6 @@ canvas{display:none}
       <button class="panel-close pressable" id="btnCerrarCuenta">✕</button>
     </div>
 
-    <div class="pc-tabs" role="tablist">
-      <button class="pc-tab-btn pressable active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
-      <button class="pc-tab-btn pressable" data-tab="plan" role="tab" aria-selected="false">Plan</button>
-      <button class="pc-tab-btn pressable" data-tab="hoy" role="tab" aria-selected="false">Hoy</button>
-      <button class="pc-tab-btn pressable" data-tab="filtros" role="tab" aria-selected="false">Filtros</button>
-    </div>
-
     <div class="pc-tab-content" id="pcTabContent">
 
       <div class="pc-tab-panel" data-tab-panel="dashboard">
@@ -704,6 +754,15 @@ canvas{display:none}
         <div class="panel-stats" id="pcStats"></div>
       </div>
 
+      <div class="pc-tab-panel" data-tab-panel="escaneos" hidden>
+        <h2 class="pc-titulo">Resumen de escaneos</h2>
+        <p class="pc-subtitulo">Aquí puedes ver el estado de cada comprobante de pago.</p>
+
+        <div class="esc-chips" id="escChips" role="tablist"></div>
+
+        <div id="escLista"></div>
+      </div>
+
       <div class="pc-tab-panel" data-tab-panel="plan" hidden>
         <div class="pc-membresia">
           <div>
@@ -734,21 +793,19 @@ canvas{display:none}
         </div>
       </div>
 
-      <div class="pc-tab-panel" data-tab-panel="hoy" hidden>
-        <div class="pc-chart-title">Comprobantes del día</div>
-        <div id="pcMovsHoy"></div>
-      </div>
-
       <div class="pc-tab-panel" data-tab-panel="filtros" hidden>
+        <h2 class="pc-titulo">Historial</h2>
+        <p class="pc-subtitulo">Buscá por fecha, cliente o comprobante, exportá o conciliá tu extracto bancario.</p>
+
         <div class="pc-buscador">
           <div class="pc-search-wrap">
             <svg class="pc-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
             <input type="text" id="pcBuscarTexto" placeholder="Buscar por comprobante o nombre del cliente" autocomplete="off">
             <div class="pc-autocomplete" id="pcAutocomplete" hidden></div>
           </div>
-          <div class="pc-filtro">
-            <input type="date" id="pcDesde">
-            <input type="date" id="pcHasta">
+          <div class="pc-filtro pc-filtro-fechas">
+            <label>Desde<input type="date" id="pcDesde"></label>
+            <label>Hasta<input type="date" id="pcHasta"></label>
           </div>
           <div class="pc-filtro">
             <select id="pcFiltroVeredicto">
@@ -800,6 +857,25 @@ canvas{display:none}
         <div id="pcMovs"></div>
       </div>
 
+    </div>
+
+    <div class="pc-tabs" role="tablist">
+      <button class="pc-tab-btn pressable active" data-tab="dashboard" role="tab" aria-selected="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.5 12 4l8 7.5"/><path d="M6 10v9a1 1 0 0 0 1 1h4v-6h2v6h4a1 1 0 0 0 1-1v-9"/></svg>
+        Inicio
+      </button>
+      <button class="pc-tab-btn pressable" data-tab="escaneos" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="17" rx="2.2"/><path d="M8 8.5h8M8 12.5h8M8 16.5h5"/></svg>
+        Escaneos
+      </button>
+      <button class="pc-tab-btn pressable" data-tab="filtros" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="12" r="7.5"/><path d="M11 8v4l3 2"/><path d="M4.2 6.5 2.5 5"/></svg>
+        Historial
+      </button>
+      <button class="pc-tab-btn pressable" data-tab="plan" role="tab" aria-selected="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.1 5.9l-1.55 1.55M7.45 16.55 5.9 18.1M18.1 18.1l-1.55-1.55M7.45 7.45 5.9 5.9"/></svg>
+        Configuración
+      </button>
     </div>
   </div>
 </div>
@@ -2400,31 +2476,112 @@ function pcVendedorHTML(lista){
 // Ordenante (quien pago) + comprobante son la forma real de "identificar"
 // un movimiento -- antes la fila solo mostraba hora/veredicto/monto,
 // indistinguible de cualquier otra.
-// Estado visual de cada fila (color del borde/monto) -- las 4 categorias
-// del filtro de estado, no solo aceptado/no-aceptado.
-function estadoMovCss(veredicto){
-  if(veredicto==='PENDIENTE_CONCILIACION') return 'ok';
-  if(veredicto==='ALERTA') return 'warn';
-  if(veredicto==='DUPLICADO') return 'dup';
-  return 'bad'; // RECHAZADO y cualquier otro
+// Categoria visual de cada comprobante -- 4 categorias (chips de la
+// pestaña Escaneos), solo verde/amarillo/rojo (sin morado): "Consolidado"
+// es un aceptado ya cruzado contra el extracto bancario (conciliado=true,
+// ver api/account/conciliar.js), "Pendiente" es aceptado pero todavia sin
+// cruzar. Duplicado y Rechazado comparten rojo -- los dos son graves,
+// misma decision que ya se tomo para la pantalla de resultado.
+function categoriaEscaneo(m){
+  if(m.veredicto==='RECHAZADO') return 'rechazado';
+  if(m.veredicto==='DUPLICADO') return 'duplicado';
+  if(ACEPTADOS_PC.includes(m.veredicto)) return m.conciliado ? 'consolidado' : 'pendiente';
+  return 'pendiente';
+}
+const ICON_CHECK='<svg viewBox="0 0 20 20" fill="currentColor"><path d="M8 13.4 4.6 10l-1.4 1.4L8 16.2l9-9-1.4-1.4z"/></svg>';
+const ICON_RELOJ='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="10" r="7.2"/><path d="M10 6.2v4l2.8 1.8"/></svg>';
+const ICON_DUP='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="7" width="9" height="9" rx="1.5"/><path d="M4 13V5.5A1.5 1.5 0 0 1 5.5 4H13"/></svg>';
+const ICON_X='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 6l8 8M14 6l-8 8"/></svg>';
+const ICON_TODOS='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="2.5" width="6" height="6" rx="1.2"/><rect x="2.5" y="11.5" width="6" height="6" rx="1.2"/><rect x="11.5" y="11.5" width="6" height="6" rx="1.2"/></svg>';
+const ESC_CATEGORIAS = {
+  consolidado:{ color:'verde', label:'Consolidado', icon:ICON_CHECK },
+  pendiente:{ color:'amarillo', label:'Pendiente', icon:ICON_RELOJ },
+  duplicado:{ color:'rojo', label:'Duplicado', icon:ICON_DUP },
+  rechazado:{ color:'rojo', label:'Rechazado', icon:ICON_X },
+};
+const ESC_CHIPS = [
+  { clave:'todos', label:'Todos', clase:'todos', icon:ICON_TODOS },
+  { clave:'consolidado', label:'Consolidados', clase:'verde', icon:ICON_CHECK },
+  { clave:'pendiente', label:'Pendientes', clase:'amarillo', icon:ICON_RELOJ },
+  { clave:'duplicado', label:'Duplicados', clase:'rojo', icon:ICON_DUP },
+  { clave:'rechazado', label:'Rechazados', clase:'rojo', icon:ICON_X },
+];
+
+// Una sola card por comprobante -- la usan tanto la pestaña Escaneos (lista
+// en memoria, filtrada por chip) como el resultado de busqueda de
+// Historial, para que se vean identicas.
+function escCardHTML(m){
+  const cat = categoriaEscaneo(m);
+  const info = ESC_CATEGORIAS[cat];
+  const hora = formatearFechaEC(m.fecha, true);
+  const fechaCorta = new Date(m.fecha).toLocaleDateString('es-EC',{ day:'numeric', month:'short' });
+  const nombre = m.ordenante ? escapeHtml(m.ordenante) : '—';
+  let doc;
+  if(cat==='duplicado') doc = 'Duplicado';
+  else if(cat==='rechazado') doc = m.motivos ? escapeHtml(m.motivos) : 'Rechazado';
+  else doc = m.comprobante ? ('N° '+escapeHtml(m.comprobante)) : '—';
+  const montoTxt = m.monto ? '$'+Number(m.monto).toFixed(2) : '—';
+  const montoClase = m.monto ? info.color : 'gris';
+  return '<div class="esc-card '+info.color+'">'+
+    '<div class="esc-fecha"><div class="hora">'+hora+'</div><div class="dia">'+fechaCorta+'</div></div>'+
+    '<div class="esc-info"><div class="nombre">'+nombre+'</div><div class="doc">'+doc+'</div></div>'+
+    '<div class="esc-derecha"><span class="esc-badge '+info.color+'">'+info.icon+'<span>'+info.label+'</span></span>'+
+    '<div class="esc-monto '+montoClase+'">'+montoTxt+'</div></div>'+
+    '</div>';
 }
 
-// contenedorId: el mismo render sirve para la pestaña "Hoy" (pcMovsHoy) y
-// la pestaña "Filtros" (pcMovs) -- son dos listas independientes ahora
-// (antes una sola se reusaba para las dos cosas, pisandose entre si).
+// contenedorId: el mismo render sirve para la lista de la pestaña
+// "Escaneos" (escLista) y los resultados de "Historial" (pcMovs).
 function renderMovimientos(contenedorId, movs, mensajeVacio){
   const cont=$(contenedorId);
-  if(!movs || !movs.length){ cont.innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada hoy.')+'</div>'; return; }
-  cont.innerHTML = movs.slice().reverse().map(m=>{
-    const estado=estadoMovCss(m.veredicto);
-    const hora=formatearFechaEC(m.fecha, true);
-    const detalle=[m.ordenante, m.comprobante?('N° '+m.comprobante):null].filter(Boolean).map(escapeHtml).join(' · ');
-    const chipConciliado=m.conciliado?'<span class="pc-mov-conciliado" title="Conciliado con el extracto bancario">✓ Conciliado</span>':'';
-    return '<div class="pc-mov-row '+estado+'"><div class="pc-mov-linea"><span class="pc-mov-hora">'+hora+'</span>'+
-      '<span class="pc-mov-txt">'+(VEREDICTOS_LEGIBLES_PC[m.veredicto]||m.veredicto)+'</span>'+chipConciliado+
-      '<span class="pc-mov-monto '+estado+'">'+(m.monto?'$'+Number(m.monto).toFixed(2):'—')+'</span></div>'+
-      (detalle?'<div class="pc-mov-detalle">'+detalle+'</div>':'')+'</div>';
+  if(!movs || !movs.length){ cont.innerHTML='<div class="pc-mov-vacio">'+(mensajeVacio||'Todavía no has escaneado nada.')+'</div>'; return; }
+  cont.innerHTML = movs.slice().reverse().map(escCardHTML).join('');
+}
+
+// Pestaña "Escaneos": trae los ultimos 30 dias UNA vez y de ahi filtra por
+// chip en memoria (nada de volver a pedir al servidor por cada chip).
+let escaneosTodos = [];
+let escaneosCargados = false;
+let escaneosFiltroActivo = 'todos';
+function renderEscChips(){
+  const conteos = { todos:escaneosTodos.length, consolidado:0, pendiente:0, duplicado:0, rechazado:0 };
+  escaneosTodos.forEach(m=>{ conteos[categoriaEscaneo(m)]++; });
+  $('escChips').innerHTML = ESC_CHIPS.map(c=>{
+    const activo = c.clave===escaneosFiltroActivo;
+    return '<button type="button" class="esc-chip '+c.clase+(activo?' active':'')+'" data-chip="'+c.clave+'">'+
+      c.icon+'<span>'+c.label+'</span><span class="esc-chip-count">'+(conteos[c.clave]||0)+'</span></button>';
   }).join('');
+  Array.from($('escChips').children).forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      escaneosFiltroActivo = btn.dataset.chip;
+      renderEscChips();
+      renderEscLista();
+    });
+  });
+}
+function renderEscLista(){
+  const lista = escaneosFiltroActivo==='todos' ? escaneosTodos : escaneosTodos.filter(m=>categoriaEscaneo(m)===escaneosFiltroActivo);
+  renderMovimientos('escLista', lista, 'No hay comprobantes en esta categoría.');
+}
+async function cargarEscaneos(){
+  $('escLista').innerHTML='<div class="pc-mov-vacio">Cargando...</div>';
+  try{
+    const { data:{ session } } = await sbc.auth.getSession();
+    if(!session) throw new Error('sin sesion');
+    const hasta = hoyISOClient();
+    const desdeDate = new Date(); desdeDate.setDate(desdeDate.getDate()-30);
+    const desde = desdeDate.toISOString().slice(0,10);
+    const qs = new URLSearchParams({ desde, hasta });
+    const res=await fetch(NUVO_API+'/api/account/dashboard?'+qs.toString(), { headers:{ Authorization:'Bearer '+session.access_token } });
+    const d=await res.json();
+    if(!res.ok) throw new Error(d.error||'Error');
+    escaneosTodos = d.movimientosRango || [];
+  }catch(e){
+    escaneosTodos = [];
+    $('escLista').innerHTML='<div class="pc-mov-vacio">No se pudo cargar. Revisa tu conexión.</div>';
+  }
+  renderEscChips();
+  renderEscLista();
 }
 
 // Total de lo que esta viendo AHORA (el rango/filtro activo), no solo de
@@ -2467,10 +2624,10 @@ function hoyISOClient(){ return new Date(Date.now() - 5*3600*1000).toISOString()
 
 let movimientosMostrados = [];
 
-// Pestañas de "Mi cuenta": Plan / Hoy / Dashboard / Filtros. Es solo
-// mostrar/ocultar -- los datos ya estan todos en memoria desde el fetch de
-// abrirCuenta(), salvo "Filtros" que hace su propio fetch (buscarMovimientos())
-// la primera vez que se abre esa pestaña en esta sesion de "Mi cuenta".
+// Pestañas de "Mi cuenta" (barra inferior): Inicio / Escaneos / Historial /
+// Configuración. Es solo mostrar/ocultar -- los datos ya estan todos en
+// memoria desde el fetch de abrirCuenta(), salvo "Escaneos" e "Historial"
+// que hacen su propio fetch la primera vez que se abren en esta sesion.
 let pcFiltrosCargados=false;
 function cambiarPcTab(tab){
   document.querySelectorAll('.pc-tab-btn').forEach(b=>{
@@ -2481,6 +2638,7 @@ function cambiarPcTab(tab){
   document.querySelectorAll('.pc-tab-panel').forEach(p=>{ p.hidden = p.dataset.tabPanel!==tab; });
   $('pcTabContent').scrollTop=0;
   if(tab==='filtros' && !pcFiltrosCargados){ pcFiltrosCargados=true; buscarMovimientos(); }
+  if(tab==='escaneos' && !escaneosCargados){ escaneosCargados=true; cargarEscaneos(); }
 }
 document.querySelectorAll('.pc-tab-btn').forEach(b=>{
   b.addEventListener('click', ()=>cambiarPcTab(b.dataset.tab));
@@ -2490,6 +2648,8 @@ async function abrirCuenta(){
   detenerCamara();
   $('panelCuenta').classList.add('on');
   pcFiltrosCargados=false;
+  escaneosCargados=false; escaneosTodos=[]; escaneosFiltroActivo='todos';
+  $('escChips').innerHTML=''; $('escLista').innerHTML='';
   cambiarPcTab('dashboard');
   $('pcNombre').textContent = nombreUsuario ? ('Hola, '+nombreUsuario.split(' ')[0]) : 'Mi cuenta';
   $('pcPlan').textContent='—'; $('pcVence').textContent=''; $('pcDiasNum').textContent='—'; $('pcDiasNum').className='num';
@@ -2499,7 +2659,6 @@ async function abrirCuenta(){
   $('pcUso').innerHTML=''; $('pcBenef').innerHTML='';
   $('pcPorVendedorWrap').hidden=true; $('pcPorVendedor').innerHTML='';
   $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">Cargando...</div>';
-  $('pcMovsHoy').innerHTML='';
   $('pcMovs').innerHTML='';
   $('pcMovsTitulo').textContent='Movimientos de hoy';
   if(!$('pcDesde').value){ $('pcDesde').value=hoyISOClient(); $('pcHasta').value=hoyISOClient(); }
@@ -2551,8 +2710,6 @@ async function abrirCuenta(){
       $('pcPorVendedorWrap').hidden=false;
       $('pcPorVendedor').innerHTML=pcVendedorHTML(d.porVendedor);
     }
-
-    renderMovimientos('pcMovsHoy', d.movimientosHoy || [], 'Todavía no has escaneado nada hoy.');
   }catch(e){
     $('pcStats').innerHTML='<div style="color:var(--muted);font-size:13px;grid-column:1/-1">No se pudo cargar tu cuenta. Revisa tu conexión.</div>';
   }
