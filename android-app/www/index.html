@@ -211,68 +211,84 @@ canvas{display:none}
 
 /* ---------- Resultado: el momento que el operario mira cien veces al dia,
    con guantes, apurado, con mala luz -- prioridad absoluta a legibilidad
-   instantanea sobre decoracion. ---------- */
-.result{position:fixed;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;padding:34px;text-align:center;overflow:hidden}
+   instantanea sobre decoracion. Fondo CLARO por defecto (diseño
+   estandarizado, sep 2026) -- la variante oscura de siempre queda atras
+   de .oscuro, que se activa segun la preferencia guardada en este
+   dispositivo (ver temaResultadoOscuro() en el JS), nunca por defecto. ---------- */
+.result{position:fixed;inset:0;z-index:8;display:none;flex-direction:column;align-items:center;justify-content:center;
+  padding:30px 26px;text-align:center;overflow:hidden;background:#F5F6FA;color:var(--ink)}
 .result.on{display:flex;animation:resultIn .25s var(--ease-tap)}
 @keyframes resultIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
-.result.ok{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%)}
-.result.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
-/* Duplicado (comprobante legitimo pero repetido) NO es lo mismo que
-   rechazado (comprobante invalido/posible fraude): comparten el mismo
-   rojo hoy y el operario no puede distinguirlos de un vistazo. Ambar
-   propio + icono propio para "revisar", en vez del rojo de "no continuar". */
-.result.dup{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
-/* ALERTA (aceptado con advertencia -- comprobante viejo, o la
-   confirmacion de unicidad con el servidor no se pudo hacer) usaba el
-   mismo verde/confetti/audio que un aceptado limpio: eso le decia al
-   operario "seguí tranquilo" cuando en realidad hay algo sin
-   verificar. Mismo ambar que duplicado, icono de check (sigue siendo,
-   probablemente, un comprobante valido -- solo que no 100% verificado). */
-.result.warn{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
-.result.warn .disc{background:radial-gradient(circle at 50% 35%, var(--amber-hi), var(--amber));box-shadow:0 0 46px -4px var(--amber)}
-.result.warn .rlabel{color:var(--amber-hi)}
-.result.warn .again{background:var(--amber);color:#2A1704}
-.badge{position:relative;width:150px;height:150px;display:grid;place-items:center;margin-bottom:8px}
+
+.result-marca{display:flex;align-items:center;gap:9px;margin-bottom:20px}
+.result-logo{width:30px;height:30px;object-fit:contain;flex-shrink:0}
+.result-marca small{font-family:var(--inter);font-weight:600;font-size:10.5px;line-height:1.3;color:var(--muted);text-align:left}
+.result.oscuro .result-marca small{color:#C7CCE0}
+
+.badge{position:relative;width:132px;height:132px;display:grid;place-items:center;margin-bottom:14px}
+.badge::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle, rgba(0,210,106,.16), transparent 72%)}
+.result.warn .badge::before,.result.dup .badge::before{background:radial-gradient(circle, rgba(255,159,28,.18), transparent 72%)}
+.result.bad .badge::before{background:radial-gradient(circle, rgba(255,65,82,.16), transparent 72%)}
 .rings{position:absolute;inset:0;display:grid;place-items:center}
-.rings b{position:absolute;width:120px;height:120px;border-radius:50%;border:2px solid var(--green);opacity:0}
+.rings b{position:absolute;width:104px;height:104px;border-radius:50%;border:2px solid var(--green);opacity:0}
 .result.ok .rings b{animation:ping 1.5s ease-out infinite}
 .rings b:nth-child(2){animation-delay:.5s}.rings b:nth-child(3){animation-delay:1s}
 @keyframes ping{0%{transform:scale(.5);opacity:.9}80%{opacity:0}100%{transform:scale(2.1);opacity:0}}
-.disc{width:118px;height:118px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
-  background:radial-gradient(circle at 50% 35%, var(--green-hi), var(--green));box-shadow:0 0 46px -4px var(--green);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
-.result.bad .disc{background:radial-gradient(circle at 50% 35%, #ff7d89, var(--red));box-shadow:0 0 46px -4px var(--red)}
-.result.dup .disc{background:radial-gradient(circle at 50% 35%, var(--amber-hi), var(--amber));box-shadow:0 0 46px -4px var(--amber)}
+.disc{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
+  background:linear-gradient(135deg,var(--green-hi),var(--green));box-shadow:0 16px 32px -12px rgba(0,210,106,.55);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
+.result.bad .disc{background:linear-gradient(135deg,#ff8d97,var(--red));box-shadow:0 16px 32px -12px rgba(255,65,82,.5)}
+.result.warn .disc,.result.dup .disc{background:linear-gradient(135deg,var(--amber-hi),var(--amber));box-shadow:0 16px 32px -12px rgba(255,159,28,.5)}
 @keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
-.disc svg{width:64px;height:64px}
+.disc svg{width:52px;height:52px}
 .disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
 @keyframes draw{to{stroke-dashoffset:0}}
-/* 36px: el veredicto (aceptado/rechazado/duplicado) es el dato mas
-   importante de la pantalla -- el operario necesita eso antes que el
-   monto -- asi que pesa mas que la etiqueta anterior de 26px. */
-.rlabel{font-family:var(--sora);font-weight:800;font-size:36px;letter-spacing:.3px;text-transform:uppercase;color:var(--green-hi);margin-bottom:4px;line-height:1.1}
-.result.bad .rlabel{color:#ff9aa4}
-.result.dup .rlabel{color:var(--amber-hi)}
-.amount{font-family:var(--sora);font-weight:800;font-size:62px;line-height:1.05;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:2px 0 4px}
+
+.rlabel{font-family:var(--sora);font-weight:700;font-size:23px;color:var(--ink);margin-bottom:6px;line-height:1.25}
+.rlabel b{font-weight:800;color:var(--green)}
+.result.warn .rlabel b,.result.dup .rlabel b{color:var(--amber)}
+.result.bad .rlabel b{color:var(--red)}
+.rsub{font-size:14px;color:var(--muted);max-width:300px;line-height:1.4;margin-bottom:16px}
+.rsub:empty{display:none;margin:0}
+
+.amount{font-family:var(--sora);font-weight:800;font-size:44px;line-height:1.08;letter-spacing:-1px;font-variant-numeric:tabular-nums;color:var(--ink);margin-bottom:2px}
 /* En rechazo/duplicado no hay monto que mostrar: este texto (el motivo
-   corto, ej. "No continuar") ES el veredicto -- tiene que leerse tan
-   grande como el monto en el caso aceptado, no quedar chico. */
-.result.bad .amount,.result.dup .amount{font-size:46px;line-height:1.1}
-.card{width:100%;max-width:360px;margin-top:16px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:14px 18px;backdrop-filter:blur(8px)}
-.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;font-size:14px}
-.row+.row{border-top:1px solid rgba(255,255,255,.08)}
-.row .k{color:var(--muted)}.row .v{font-weight:600;font-family:var(--sora);text-align:right}
-.reasons{margin-top:14px;font-size:14px;color:#ffd7db;line-height:1.5;max-width:340px}
-.chip{margin-top:14px;font-size:12px;color:var(--muted);border:1px solid rgba(255,255,255,.14);padding:6px 12px;border-radius:999px}
+   corto, ej. "No continuar") ES el veredicto -- tiene que leerse grande. */
+.result.bad .amount,.result.dup .amount{font-size:30px;line-height:1.2}
+
+.card{width:100%;max-width:360px;margin-top:14px;background:#fff;border:1px solid #E4E7F0;border-radius:18px;padding:4px 18px;box-shadow:0 12px 28px -18px rgba(10,22,61,.25)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;font-size:13.5px}
+.row+.row{border-top:1px solid #EEF0F5}
+.row .k{color:var(--muted)}.row .v{font-weight:600;font-family:var(--sora);color:var(--ink);text-align:right}
+.reasons{margin:10px 0;font-size:13.5px;color:#B3222E;line-height:1.5}
+.chip{margin-top:14px;font-size:12px;color:var(--muted);border:1px solid #E4E7F0;background:#F5F6FA;padding:6px 12px;border-radius:999px}
 /* Si ninguna escritura (ni la confirmacion normal ni el respaldo) logro
    guardar el comprobante, el operario tiene que verlo -- no un chip gris
    mas que se confunde con el resto de la letra chica. */
-.chip-warn{color:var(--red);border-color:rgba(255,65,82,.5);font-weight:700}
-.again{margin-top:22px}
-.result.ok .again{background:var(--green);color:#04150E;box-shadow:0 12px 34px -10px var(--green)}
-.result.bad .again{background:#fff;color:#1a1a1a}
-.result.dup .again{background:var(--amber);color:#2A1704}
-.spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green-hi);opacity:0;z-index:0}
+.chip-warn{color:#B3222E;border-color:rgba(226,58,78,.35);background:#FDE7E8;font-weight:700}
+
+.again{margin-top:24px;display:inline-flex;align-items:center;gap:9px;padding:16px 32px;border-radius:999px;
+  font-family:var(--sora);font-weight:700;font-size:15px;border:0}
+.result.ok .again{background:var(--green);color:#04150E;box-shadow:0 14px 30px -10px rgba(0,210,106,.55)}
+.result.warn .again,.result.dup .again{background:var(--amber);color:#2A1704;box-shadow:0 14px 30px -10px rgba(255,159,28,.5)}
+.result.bad .again{background:var(--red);color:#fff;box-shadow:0 14px 30px -10px rgba(255,65,82,.5)}
+
+.spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green);opacity:0;z-index:0}
 @media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
+
+/* Variante oscura -- opt-in, guardada en este dispositivo (Mi cuenta >
+   Plan). Mismo look intenso que tenia esta pantalla antes de este
+   rediseño, para quien lo prefiera. */
+.result.oscuro{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%);color:#fff}
+.result.oscuro.warn,.result.oscuro.dup{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
+.result.oscuro.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
+.result.oscuro .rlabel,.result.oscuro .amount{color:#fff}
+.result.oscuro .rsub{color:#C7CCE0}
+.result.oscuro .card{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);backdrop-filter:blur(8px);box-shadow:none}
+.result.oscuro .row+.row{border-top-color:rgba(255,255,255,.08)}
+.result.oscuro .row .v{color:#fff}
+.result.oscuro .reasons{color:#ffd7db}
+.result.oscuro .chip{background:transparent;border-color:rgba(255,255,255,.14)}
+.result.oscuro .chip-warn{background:transparent;color:#ff9aa4;border-color:rgba(255,65,82,.5)}
 
 /* ---------- Mi cuenta ---------- */
 /* "Mi cuenta" es pantalla completa (no un popup/sheet flotante): tapa toda
@@ -340,6 +356,11 @@ canvas{display:none}
 .pc-uso-bar{height:6px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:7px}
 .pc-uso-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#6C3AED,#3B82F6)}
 .pc-uso-bar.lleno i{background:linear-gradient(90deg,#FF8A00,var(--red))}
+
+.pc-tema-switch{display:flex;background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:999px;padding:3px;gap:2px}
+.pc-tema-opt{border:0;background:transparent;color:var(--muted);font-family:var(--sora);font-weight:700;font-size:11.5px;
+  padding:6px 14px;border-radius:999px;cursor:pointer}
+.pc-tema-opt.on{background:var(--violeta);color:#fff}
 
 .pc-benef-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin:18px 2px 8px}
 .pc-benef{display:flex;flex-direction:column}
@@ -486,6 +507,8 @@ canvas{display:none}
   .pstat .n{color:#0A163D}
   .pc-semaforo-card{background:#fff;border-color:#E4E7F0}
   .pc-semaforo-card .n{color:#0A163D}
+  .pc-tema-switch{background:#fff;border-color:#E4E7F0}
+  .pc-tema-opt{color:#5A6076}
   .pc-uso{background:#fff;border-color:#E4E7F0}
   .pc-uso-row .v{color:#0A163D}
   .pc-uso-bar{background:#EEF0F5}
@@ -582,12 +605,20 @@ canvas{display:none}
 </div>
 
 <div class="result" id="result">
+  <div class="result-marca">
+    <img class="result-logo" id="resultLogo" alt="">
+    <small>Soluciones digitales<br>para tu negocio</small>
+  </div>
   <div class="badge"><div class="rings"><b></b><b></b><b></b></div>
     <div class="disc"><svg viewBox="0 0 52 52" id="mark"></svg></div></div>
   <div class="rlabel" id="rlabel"></div>
+  <div class="rsub" id="rsub"></div>
   <div class="amount" id="ramount"></div>
   <div id="rbody"></div>
-  <button class="btn again pressable" id="btnAgain">Escanear otro</button>
+  <button class="btn again pressable" id="btnAgain">
+    <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0v6h-6v-2h4v-4h2z"/></svg>
+    Escanear otro
+  </button>
 </div>
 
 <div class="gate" id="gate">
@@ -685,6 +716,17 @@ canvas{display:none}
 
         <div class="pc-benef-title">Beneficios de tu plan</div>
         <div class="pc-benef" id="pcBenef"></div>
+
+        <div class="pc-benef-title">Pantalla de resultado al escanear</div>
+        <div class="pc-uso">
+          <div class="pc-uso-row">
+            <div class="l">Tema</div>
+            <div class="pc-tema-switch" id="pcTemaSwitch">
+              <button type="button" class="pc-tema-opt" data-tema="claro">Claro</button>
+              <button type="button" class="pc-tema-opt" data-tema="oscuro">Oscuro</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="pc-tab-panel" data-tab-panel="hoy" hidden>
@@ -915,6 +957,7 @@ const montoURL=parseFloat(params.get('monto'))||0;
 // Reusa el logo del topbar (ya embebido como data-URI) para la bienvenida,
 // en vez de duplicar el base64 -- un solo lugar con la marca.
 $('gateMark').src = $('brandLogo').src;
+$('resultLogo').src = $('brandLogo').src;
 
 // --- Acceso: login por correo (Nuvo) + verificacion de membresia ---
 const NUVO_URL='https://yyqmqgqliecodwpgvkvb.supabase.co';
@@ -2069,7 +2112,8 @@ function mostrar(r,d){
   // distinto de rechazado (comprobante invalido) -- color e icono propios,
   // no comparten el rojo de "no continuar" (ver clase .dup en el CSS).
   const dup=!ok && r.veredicto==='DUPLICADO';
-  const box=$('result'); box.className='result on '+(limpio?'ok':(alerta?'warn':(dup?'dup':'bad')));
+  const box=$('result');
+  box.className='result on '+(limpio?'ok':(alerta?'warn':(dup?'dup':'bad')))+(temaResultadoOscuro()?' oscuro':'');
   $('mark').innerHTML='<path d="'+(ok?CHECK:(dup?DUP:CROSS))+'"/>';
   // Vibracion corta al aceptar limpio, un patron propio (dos golpes cortos)
   // para alerta -- distinto del aceptado limpio Y del rechazo -- y el
@@ -2077,7 +2121,8 @@ function mostrar(r,d){
   try{ if(navigator.vibrate) navigator.vibrate(limpio ? 60 : (alerta ? [50,50,50] : [80,60,80,60,120])); }catch(e){}
   if(ok && d){
     const last4=String(d.ctaDestino).slice(-4);
-    $('rlabel').textContent='Transferencia recibida';
+    $('rlabel').innerHTML = limpio ? '¡Transferencia <b>recibida!</b>' : 'Transferencia <b>con alerta</b>';
+    $('rsub').textContent = limpio ? 'El dinero ya está disponible en la cuenta de destino.' : 'Revisá el motivo antes de continuar.';
     animarMonto($('ramount'), d.monto);
     // El chip decia "Registrado" sin importar si la escritura con el
     // comprobante realmente se confirmo -- r.guardado (seteado en
@@ -2098,11 +2143,19 @@ function mostrar(r,d){
     hablar(d, r);
   }else{
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No continuar';
-    $('rlabel').textContent=r.veredicto==='DUPLICADO'?'Ya fue usado':'Rechazado';
+    $('rlabel').innerHTML = dup ? 'Ya fue <b>usado</b>' : 'Comprobante <b>rechazado</b>';
+    $('rsub').textContent = dup ? 'Revisá antes de aceptarlo de nuevo.' : 'No continuar con esta transferencia.';
     $('ramount').textContent=titulo;
-    $('rbody').innerHTML='<div class="reasons">'+(r.motivos||['Comprobante no válido.']).map(escapeHtml).join('<br>')+'</div>';
+    $('rbody').innerHTML='<div class="card"><div class="reasons">'+(r.motivos||['Comprobante no válido.']).map(escapeHtml).join('<br>')+'</div></div>';
     hablarRechazo(r, d);
   }
+}
+// Tema de la pantalla de resultado (claro por defecto) -- guardado en
+// este dispositivo, editable en Mi cuenta > Plan. No afecta ninguna otra
+// pantalla (la camara sigue siempre oscura, "Mi cuenta" sigue su propio
+// claro/oscuro automatico segun el tema del telefono).
+function temaResultadoOscuro(){
+  try{ return localStorage.getItem('nuvoResultadoTema')==='oscuro'; }catch(e){ return false; }
 }
 function fila(k,v){ return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>'; }
 
@@ -2264,6 +2317,22 @@ function pcUsoHTML(d){
   }
   return html;
 }
+
+// Selector de tema de la pantalla de resultado -- claro por defecto,
+// guardado solo en este dispositivo (ver temaResultadoOscuro() mas
+// arriba). No hace falta esperar a abrir "Mi cuenta" para que funcione:
+// se lee localStorage en cada resultado, este selector solo lo cambia.
+function actualizarTemaSwitch(){
+  const activo = temaResultadoOscuro() ? 'oscuro' : 'claro';
+  document.querySelectorAll('.pc-tema-opt').forEach(b=>b.classList.toggle('on', b.dataset.tema===activo));
+}
+document.querySelectorAll('.pc-tema-opt').forEach(b=>{
+  b.addEventListener('click', ()=>{
+    try{ localStorage.setItem('nuvoResultadoTema', b.dataset.tema); }catch(e){}
+    actualizarTemaSwitch();
+  });
+});
+actualizarTemaSwitch();
 
 function pstat(n,l,clase){ return '<div class="pstat'+(clase?' '+clase:'')+'"><div class="n">'+n+'</div><div class="l">'+l+'</div></div>'; }
 function semaforoCard(clase,monto,etiqueta,total){
