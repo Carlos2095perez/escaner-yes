@@ -59,6 +59,11 @@
   --sora:'Poppins',system-ui,sans-serif; --inter:'Inter',system-ui,sans-serif;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+/* El texto de los botones no se puede seleccionar (ni por error, con un
+   toque largo apurado) -- se comporta como parte del diseño, no como
+   texto copiable. Los datos que sí conviene poder copiar (N° de
+   comprobante, etc., en las tarjetas) no llevan esta regla. */
+button{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 html,body{height:100%;background:var(--ink);color:var(--white);font-family:var(--inter);overflow:hidden}
 canvas{display:none}
 /* El triangulo de play nativo de Chrome Android aparece SUPERPUESTO al
@@ -227,8 +232,8 @@ canvas{display:none}
 
 .badge{position:relative;width:132px;height:132px;display:grid;place-items:center;margin-bottom:14px}
 .badge::before{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle, rgba(0,210,106,.16), transparent 72%)}
-.result.warn .badge::before,.result.dup .badge::before{background:radial-gradient(circle, rgba(255,159,28,.18), transparent 72%)}
-.result.bad .badge::before{background:radial-gradient(circle, rgba(255,65,82,.16), transparent 72%)}
+.result.warn .badge::before{background:radial-gradient(circle, rgba(255,159,28,.18), transparent 72%)}
+.result.bad .badge::before,.result.dup .badge::before{background:radial-gradient(circle, rgba(255,65,82,.16), transparent 72%)}
 .rings{position:absolute;inset:0;display:grid;place-items:center}
 .rings b{position:absolute;width:104px;height:104px;border-radius:50%;border:2px solid var(--green);opacity:0}
 .result.ok .rings b{animation:ping 1.5s ease-out infinite}
@@ -236,8 +241,8 @@ canvas{display:none}
 @keyframes ping{0%{transform:scale(.5);opacity:.9}80%{opacity:0}100%{transform:scale(2.1);opacity:0}}
 .disc{width:96px;height:96px;border-radius:50%;display:grid;place-items:center;position:relative;z-index:1;
   background:linear-gradient(135deg,var(--green-hi),var(--green));box-shadow:0 16px 32px -12px rgba(0,210,106,.55);animation:pop .5s cubic-bezier(.2,1.4,.4,1)}
-.result.bad .disc{background:linear-gradient(135deg,#ff8d97,var(--red));box-shadow:0 16px 32px -12px rgba(255,65,82,.5)}
-.result.warn .disc,.result.dup .disc{background:linear-gradient(135deg,var(--amber-hi),var(--amber));box-shadow:0 16px 32px -12px rgba(255,159,28,.5)}
+.result.bad .disc,.result.dup .disc{background:linear-gradient(135deg,#ff8d97,var(--red));box-shadow:0 16px 32px -12px rgba(255,65,82,.5)}
+.result.warn .disc{background:linear-gradient(135deg,var(--amber-hi),var(--amber));box-shadow:0 16px 32px -12px rgba(255,159,28,.5)}
 @keyframes pop{0%{transform:scale(0)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
 .disc svg{width:52px;height:52px}
 .disc path{fill:none;stroke:#fff;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:100;stroke-dashoffset:100;animation:draw .5s .25s forwards ease-out}
@@ -245,8 +250,8 @@ canvas{display:none}
 
 .rlabel{font-family:var(--sora);font-weight:700;font-size:23px;color:var(--ink);margin-bottom:6px;line-height:1.25}
 .rlabel b{font-weight:800;color:var(--green)}
-.result.warn .rlabel b,.result.dup .rlabel b{color:var(--amber)}
-.result.bad .rlabel b{color:var(--red)}
+.result.warn .rlabel b{color:var(--amber)}
+.result.bad .rlabel b,.result.dup .rlabel b{color:var(--red)}
 .rsub{font-size:14px;color:var(--muted);max-width:300px;line-height:1.4;margin-bottom:16px}
 .rsub:empty{display:none;margin:0}
 
@@ -269,8 +274,8 @@ canvas{display:none}
 .again{margin-top:24px;display:inline-flex;align-items:center;gap:9px;padding:16px 32px;border-radius:999px;
   font-family:var(--sora);font-weight:700;font-size:15px;border:0}
 .result.ok .again{background:var(--green);color:#04150E;box-shadow:0 14px 30px -10px rgba(0,210,106,.55)}
-.result.warn .again,.result.dup .again{background:var(--amber);color:#2A1704;box-shadow:0 14px 30px -10px rgba(255,159,28,.5)}
-.result.bad .again{background:var(--red);color:#fff;box-shadow:0 14px 30px -10px rgba(255,65,82,.5)}
+.result.warn .again{background:var(--amber);color:#2A1704;box-shadow:0 14px 30px -10px rgba(255,159,28,.5)}
+.result.bad .again,.result.dup .again{background:var(--red);color:#fff;box-shadow:0 14px 30px -10px rgba(255,65,82,.5)}
 
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green);opacity:0;z-index:0}
 @media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
@@ -279,8 +284,8 @@ canvas{display:none}
    Plan). Mismo look intenso que tenia esta pantalla antes de este
    rediseño, para quien lo prefiera. */
 .result.oscuro{background:radial-gradient(100% 80% at 50% 30%, #0b3a26 0%, var(--green-lo) 55%, #02150E 100%);color:#fff}
-.result.oscuro.warn,.result.oscuro.dup{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
-.result.oscuro.bad{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
+.result.oscuro.warn{background:radial-gradient(100% 80% at 50% 30%, #3d2a06 0%, var(--amber-lo) 55%, #120a01 100%)}
+.result.oscuro.bad,.result.oscuro.dup{background:radial-gradient(100% 80% at 50% 30%, #4a1620 0%, var(--red-lo) 55%, #150406 100%)}
 .result.oscuro .rlabel,.result.oscuro .amount{color:#fff}
 .result.oscuro .rsub{color:#C7CCE0}
 .result.oscuro .card{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.12);backdrop-filter:blur(8px);box-shadow:none}
@@ -2199,21 +2204,55 @@ function decir(texto){
     const v=vozEs(); if(v)u.voice=v; speechSynthesis.cancel(); speechSynthesis.speak(u);
   }catch(e){}
 }
-function hablar(d, r){
-  try{
-    const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
-    const ent=Math.floor(d.monto),cent=Math.round((d.monto-ent)*100);
-    const last4=String(d.ctaDestino).slice(-4).split('').map(c=>dig[+c]!==undefined?dig[+c]:c).join(' ');
-    let t='Transferencia recibida. '+ent+' dólares'; if(cent>0)t+=' con '+cent+' centavos';
-    t+='. A la cuenta terminada en '+last4+'.';
-    if(r && r.veredicto==='ALERTA'){
-      t+=' Atención: '+(r.motivos||[]).join(' ');
-    }
-    decir(t);
-  }catch(e){}
+function formatoMontoHablado(monto){
+  const ent=Math.floor(monto), cent=Math.round((monto-ent)*100);
+  let t=ent+' dólares'; if(cent>0) t+=' con '+cent+' centavos';
+  return t;
+}
+
+// Identificador sonoro propio por color, antes del aviso hablado -- para
+// que el operario reconozca el resultado por el oido incluso antes de
+// que la voz termine de hablar. Verde y amarillo son tonos cortos y
+// agradables (ninguno de los dos es grave); rojo (rechazado Y duplicado,
+// ambos "lo grave") usa la sirena de siempre.
+function sonarExito(){
+  return new Promise(resolve=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const t0=ctx.currentTime;
+      [[880,0],[1318.5,0.09]].forEach(([freq,delay])=>{
+        const osc=ctx.createOscillator(), gain=ctx.createGain();
+        osc.type='sine'; osc.connect(gain); gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.0001, t0+delay);
+        gain.gain.exponentialRampToValueAtTime(0.3, t0+delay+0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0+delay+0.16);
+        osc.frequency.setValueAtTime(freq, t0+delay);
+        osc.start(t0+delay); osc.stop(t0+delay+0.18);
+      });
+      setTimeout(resolve, 350);
+    }catch(e){ resolve(); }
+  });
+}
+function sonarAlerta(){
+  return new Promise(resolve=>{
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const t0=ctx.currentTime;
+      [0,0.18].forEach(delay=>{
+        const osc=ctx.createOscillator(), gain=ctx.createGain();
+        osc.type='triangle'; osc.connect(gain); gain.connect(ctx.destination);
+        gain.gain.setValueAtTime(0.0001, t0+delay);
+        gain.gain.exponentialRampToValueAtTime(0.26, t0+delay+0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0+delay+0.16);
+        osc.frequency.setValueAtTime(660, t0+delay);
+        osc.start(t0+delay); osc.stop(t0+delay+0.18);
+      });
+      setTimeout(resolve, 450);
+    }catch(e){ resolve(); }
+  });
 }
 // Sirena corta (sube y baja de tono) que antecede el aviso hablado de un
-// comprobante rechazado, para llamar la atencion antes de que hable.
+// comprobante rechazado O duplicado -- las dos son "lo grave" (rojo).
 function sonarSirena(){
   return new Promise(resolve=>{
     try{
@@ -2234,23 +2273,32 @@ function sonarSirena(){
   });
 }
 
+async function hablar(d, r){
+  try{
+    const alerta = r && r.veredicto==='ALERTA';
+    await (alerta ? sonarAlerta() : sonarExito());
+    const dig=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve'];
+    const last4=String(d.ctaDestino).slice(-4).split('').map(c=>dig[+c]!==undefined?dig[+c]:c).join(' ');
+    let t='Has recibido '+formatoMontoHablado(d.monto)+', cuenta '+last4;
+    if(alerta) t+='. Atención: '+(r.motivos||[]).join(' ');
+    decir(t);
+  }catch(e){}
+}
+
 // d = datos del QR leido (para poder mencionar el monto del comprobante
 // rechazado, aunque no se haya aceptado).
 async function hablarRechazo(r, d){
   await sonarSirena();
   try{
-    const montoTxt = (d && Number(d.monto)>0) ? (' El comprobante es por '+formatoMontoHablado(d.monto)+'.') : '';
-    let t='Atención. ';
-    if(r.veredicto==='DUPLICADO') t+='Comprobante duplicado.'+montoTxt+' Este comprobante ya fue usado. No continuar.';
-    else if(r.veredicto==='ERROR') t+='No se pudo verificar el comprobante. Intenta de nuevo.';
-    else t+='Comprobante rechazado.'+montoTxt+' '+((r.motivos&&r.motivos[0])||('No se acreditó a la cuenta de '+(CONFIG.NOMBRE_NEGOCIO||'el negocio')+'.'))+' No continuar.';
+    const dup = r.veredicto==='DUPLICADO';
+    const error = r.veredicto==='ERROR';
+    const montoTxt = (d && Number(d.monto)>0) ? formatoMontoHablado(d.monto) : '';
+    let t;
+    if(dup) t='Comprobante duplicado'+(montoTxt?', '+montoTxt:'')+', ya fue escaneado anteriormente.';
+    else if(error) t='Atención. No se pudo verificar el comprobante. Intenta de nuevo.';
+    else t='ADVERTENCIA, este comprobante califica para falsificación o fraude, revisa tu cuenta bancaria.'+(montoTxt?' El comprobante es por '+montoTxt+'.':'');
     decir(t);
   }catch(e){}
-}
-function formatoMontoHablado(monto){
-  const ent=Math.floor(monto), cent=Math.round((monto-ent)*100);
-  let t=ent+' dólares'; if(cent>0) t+=' con '+cent+' centavos';
-  return t;
 }
 function reanudar(){
   $('result').className='result'; ocupado=false; noHallaDesde=0;
