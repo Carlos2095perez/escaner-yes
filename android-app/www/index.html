@@ -376,6 +376,16 @@ canvas{display:none}
   padding:6px 14px;border-radius:999px;cursor:pointer}
 .pc-tema-opt.on{background:var(--violeta);color:#fff}
 
+/* Elegir si "Desde/Hasta" filtra por fecha de escaneo o por la fecha real
+   del comprobante (Historial) -- mismo look que pc-tema-switch, clase
+   propia para no engancharse al listener de arriba (ese es solo para el
+   tema claro/oscuro del resultado). */
+.pc-campo-label{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin-bottom:6px}
+.pc-campo-switch{display:flex;background:rgba(255,255,255,.06);border:1px solid var(--azul-70);border-radius:999px;padding:3px;gap:2px;margin-bottom:10px}
+.pc-campo-opt{flex:1;border:0;background:transparent;color:var(--muted);font-family:var(--sora);font-weight:700;font-size:11.5px;
+  padding:8px 10px;border-radius:999px;cursor:pointer;text-align:center}
+.pc-campo-opt.on{background:var(--violeta);color:#fff}
+
 .pc-benef-title{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-family:var(--sora);font-weight:700;margin:18px 2px 8px}
 .pc-benef{display:flex;flex-direction:column}
 .pc-benef-item{display:flex;align-items:center;gap:10px;padding:11px 2px;border-bottom:1px solid var(--azul-70)}
@@ -562,6 +572,8 @@ canvas{display:none}
   .pc-semaforo-card .n{color:#0A163D}
   .pc-tema-switch{background:#fff;border-color:#E4E7F0}
   .pc-tema-opt{color:#5A6076}
+  .pc-campo-switch{background:#fff;border-color:#E4E7F0}
+  .pc-campo-opt{color:#5A6076}
   .pc-uso{background:#fff;border-color:#E4E7F0}
   .pc-uso-row .v{color:#0A163D}
   .pc-uso-bar{background:#EEF0F5}
@@ -802,6 +814,11 @@ canvas{display:none}
             <svg class="pc-search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.7.7l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0A4.5 4.5 0 1 1 14 9.5 4.5 4.5 0 0 1 9.5 14z"/></svg>
             <input type="text" id="pcBuscarTexto" placeholder="Buscar por comprobante o nombre del cliente" autocomplete="off">
             <div class="pc-autocomplete" id="pcAutocomplete" hidden></div>
+          </div>
+          <div class="pc-campo-label">Filtrar rango de fechas por</div>
+          <div class="pc-campo-switch" id="pcCampoFechaSwitch">
+            <button type="button" class="pc-campo-opt on" data-campo="escaneo">Fecha de escaneo</button>
+            <button type="button" class="pc-campo-opt" data-campo="comprobante">Fecha del comprobante</button>
           </div>
           <div class="pc-filtro pc-filtro-fechas">
             <label>Desde<input type="date" id="pcDesde"></label>
@@ -1995,6 +2012,10 @@ async function confirmarConServidor(datos, resultadoLocal){
           qrHash: datos.hash || null,
           ordenante: datos.ordenante || null,
           motivos: (resultadoLocal.motivos||[]).join('; ').slice(0,500) || null,
+          // Fecha del comprobante (viene del QR, ver parsear()) -- distinta
+          // de cuando se escaneo. Sin esto, Historial solo podia filtrar
+          // por fecha de escaneo.
+          fechaComprobante: datos.timestamp ? new Date(datos.timestamp).toISOString() : null,
         }),
       }, 8000);
     }catch(errFetch){
@@ -2516,8 +2537,12 @@ function escCardHTML(m){
   const hora = formatearFechaEC(m.fecha, true);
   const fechaCorta = new Date(m.fecha).toLocaleDateString('es-EC',{ day:'numeric', month:'short' });
   const nombre = m.ordenante ? escapeHtml(m.ordenante) : '—';
+  // Duplicado ahora SI trae comprobante/ordenante/monto (ver api/scans/log.js
+  // -- se empezaron a guardar en el intento repetido, antes se perdian). Los
+  // duplicados de ANTES de ese cambio siguen sin este dato: se cae al texto
+  // generico en vez de mostrar un "—" vacio y confuso.
   let doc;
-  if(cat==='duplicado') doc = 'Duplicado';
+  if(cat==='duplicado') doc = m.comprobante ? ('N° '+escapeHtml(m.comprobante)) : 'Sin datos del comprobante (registrado antes de esta mejora)';
   else if(cat==='rechazado') doc = m.motivos ? escapeHtml(m.motivos) : 'Rechazado';
   else doc = m.comprobante ? ('N° '+escapeHtml(m.comprobante)) : '—';
   const montoTxt = m.monto ? '$'+Number(m.monto).toFixed(2) : '—';
@@ -2752,12 +2777,27 @@ $('pcBuscarTexto').addEventListener('input', ()=>{
 });
 $('pcBuscarTexto').addEventListener('blur', ()=>{ setTimeout(ocultarAutocomplete, 150); });
 
+// "Filtrar por" (Historial): fecha de escaneo (creado_en, de siempre) o
+// fecha del comprobante (la que trae el propio QR bancario, ver
+// fechaComprobante en confirmarConServidor()/registrarEscaneo()) -- son
+// cosas distintas, alguien puede escanear HOY un comprobante de ayer.
+let campoFechaActivo='escaneo';
+Array.from($('pcCampoFechaSwitch').children).forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    campoFechaActivo = btn.dataset.campo;
+    Array.from($('pcCampoFechaSwitch').children).forEach(b=>b.classList.toggle('on', b===btn));
+    buscarMovimientos();
+  });
+});
+
 $('btnPcBuscar').addEventListener('click', buscarMovimientos);
 $('btnPcLimpiar').addEventListener('click', ()=>{
   $('pcBuscarTexto').value='';
   $('pcFiltroVeredicto').value='';
   $('pcDesde').value=hoyISOClient();
   $('pcHasta').value=hoyISOClient();
+  campoFechaActivo='escaneo';
+  Array.from($('pcCampoFechaSwitch').children).forEach(b=>b.classList.toggle('on', b.dataset.campo==='escaneo'));
   ocultarAutocomplete();
   buscarMovimientos();
 });
@@ -2769,12 +2809,14 @@ async function buscarMovimientos(){
   const texto=$('pcBuscarTexto').value.trim();
   const veredicto=$('pcFiltroVeredicto').value;
   const hayFiltros = Boolean(texto || veredicto);
+  const porComprobante = campoFechaActivo==='comprobante';
   $('pcMovs').innerHTML='<div class="pc-mov-vacio">Buscando...</div>';
-  $('pcMovsTitulo').textContent = (desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango') + (hayFiltros?' · filtrado':'');
+  $('pcMovsTitulo').textContent = (desde===hasta ? 'Movimientos del '+new Date(desde+'T12:00:00').toLocaleDateString('es-EC',{day:'numeric',month:'short'}) : 'Movimientos del rango') +
+    (porComprobante ? ' · por fecha de comprobante' : '') + (hayFiltros?' · filtrado':'');
   try{
     const { data:{ session } } = await sbc.auth.getSession();
     if(!session) throw new Error('sin sesion');
-    const qs=new URLSearchParams({ desde, hasta });
+    const qs=new URLSearchParams({ desde, hasta, campoFecha:campoFechaActivo });
     if(texto) qs.set('q', texto);
     if(veredicto) qs.set('veredicto', veredicto);
     const res=await fetch(NUVO_API+'/api/account/dashboard?'+qs.toString(), { headers:{ Authorization:'Bearer '+session.access_token } });
@@ -3298,6 +3340,7 @@ async function registrarEscaneo(r, d){
           qrHash: d && d.hash || null,
           ordenante: d && d.ordenante || null,
           motivos: (r.motivos||[]).join('; ').slice(0,500) || null,
+          fechaComprobante: d && d.timestamp ? new Date(d.timestamp).toISOString() : null,
         }),
       }, 8000);
     }catch(errFetch){
