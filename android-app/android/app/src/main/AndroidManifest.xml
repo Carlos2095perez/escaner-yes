@@ -18,6 +18,20 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Integracion con "Cierre de caja" (otra app, PWA/TWA propia
+                 del negocio, repo facturacion-pos-movil): boton "Escanear
+                 con NUVO" que abre
+                 intent://escanear#Intent;scheme=nuvo;package=com.nuvo.validador;end
+                 Ver NuvoDeepLinkPlugin.java, ahi vive la señal real de
+                 "modo integracion" que lee el JS; este intent-filter solo
+                 hace que Android sepa abrir NUVO con ese link. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="nuvo" android:host="escanear" />
+            </intent-filter>
         </activity>
 
         <provider

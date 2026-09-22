@@ -277,6 +277,17 @@ canvas{display:none}
 .result.warn .again{background:var(--amber);color:#2A1704;box-shadow:0 14px 30px -10px rgba(255,159,28,.5)}
 .result.bad .again,.result.dup .again{background:var(--red);color:#fff;box-shadow:0 14px 30px -10px rgba(255,65,82,.5)}
 
+/* Boton "Enviar a Cierre de caja" -- solo visible cuando NUVO se abrio
+   desde esa integracion (ver modoIntegracionCierre) y el veredicto es
+   aceptado/alerta. Secundario respecto a "Escanear otro" (outline, no
+   solido) porque el flujo tipico es: escaneas, confirmas el envio, y
+   recien ahi volves a "Cierre de caja" -- "Escanear otro" es para cuando
+   te equivocaste y queres repetir sin salir de NUVO. */
+.integracion{margin-top:24px;display:inline-flex;align-items:center;gap:9px;padding:14px 28px;border-radius:999px;
+  font-family:var(--sora);font-weight:700;font-size:14px;border:2px solid #049656;background:transparent;
+  color:#049656;cursor:pointer}
+.result.oscuro .integracion{color:var(--green-hi);border-color:var(--green-hi)}
+
 .spark{position:absolute;width:9px;height:9px;border-radius:50%;background:var(--green);opacity:0;z-index:0}
 @media (prefers-reduced-motion:reduce){.rings b,.disc,.disc path,.result.on,.verify.on{animation:none!important}.disc path{stroke-dashoffset:0}.result.on{opacity:1;transform:none}.verify.on{opacity:1}}
 
@@ -689,6 +700,10 @@ canvas{display:none}
   <div class="rsub" id="rsub"></div>
   <div class="amount" id="ramount"></div>
   <div id="rbody"></div>
+  <button class="btn integracion pressable" id="btnEnviarIntegracion" hidden>
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M5 12h11.17l-4.88-4.88L12.71 5.7 20 13l-7.29 7.3-1.42-1.42L16.17 14H5v-2z"/></svg>
+    Enviar a Cierre de caja
+  </button>
   <button class="btn again pressable" id="btnAgain">
     <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><path fill="currentColor" d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm16 0v6h-6v-2h4v-4h2z"/></svg>
     Escanear otro
@@ -2199,6 +2214,55 @@ function parsear(t){
           monto:parseFloat(p[8]),timestamp:timestamp,uuid:p[10],comprobante:p[11],hash:p[12]};
 }
 
+// Integracion con "Cierre de caja" (otra app, ver NuvoDeepLinkPlugin.java
+// + AndroidManifest.xml): si NUVO se abrio desde alli via el deep link
+// "nuvo://escanear", tras un resultado aceptado/alerta se muestra un
+// boton extra que manda los datos de vuelta como query params en la URL.
+// NUNCA se envia ni se guarda nada solo -- la persona sigue teniendo que
+// confirmar "Registrar cobro" del otro lado, esto solo precarga el
+// formulario. El dominio de vuelta esta fijo (no viene de ningun parametro
+// externo) para que ninguna otra app pueda hacer que NUVO le mande datos
+// de un comprobante a un destino distinto.
+let modoIntegracionCierre = false;
+let comprobanteParaIntegracion = null;
+const RETORNO_CIERRE_CAJA = 'https://facturacion-pos-movil-production.up.railway.app/cobro-transferencia';
+async function revisarModoIntegracion(){
+  try{
+    const nativo = window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()
+      && window.Capacitor.Plugins && window.Capacitor.Plugins.NuvoDeepLink;
+    if(!nativo) return;
+    const r = await window.Capacitor.Plugins.NuvoDeepLink.getLaunchData();
+    if(r && r.modoIntegracion) modoIntegracionCierre = true;
+    // launchMode="singleTask": si NUVO ya estaba abierta cuando "Cierre de
+    // caja" la vuelve a lanzar, no hay un arranque nuevo que leer con
+    // getLaunchData() -- este evento es lo que avisa de ese caso.
+    window.Capacitor.Plugins.NuvoDeepLink.addListener('deepLink', (data)=>{
+      if(data && data.modoIntegracion) modoIntegracionCierre = true;
+    });
+  }catch(e){ /* fuera de la app empaquetada (navegador/PWA) esto no existe -- no rompe nada */ }
+}
+revisarModoIntegracion();
+
+// Arma la URL de vuelta con los 5 campos que "Cierre de caja" precarga en
+// su formulario (Cliente/Fecha/Banco/N° de comprobante/Valor) y navega
+// ahi -- Capacitor intercepta la navegacion a un dominio externo y la abre
+// como Android App Link (la app instalada, no un navegador aparte).
+function enviarAIntegracion(){
+  if(!comprobanteParaIntegracion) return;
+  const d = comprobanteParaIntegracion;
+  const fecha = d.timestamp ? new Date(d.timestamp).toISOString().slice(0,10) : '';
+  const qs = new URLSearchParams({
+    origen: 'nuvo',
+    cliente: d.ordenante || '',
+    fecha,
+    banco: 'PICHINCHA',
+    comprobante: d.comprobante || '',
+    valor: (Number(d.monto)>0) ? Number(d.monto).toFixed(2) : '',
+  });
+  location.href = RETORNO_CIERRE_CAJA + '?' + qs.toString();
+}
+$('btnEnviarIntegracion').addEventListener('click', enviarAIntegracion);
+
 function mostrar(r,d){
   // ALERTA usaba el mismo "ok" que un aceptado limpio (PENDIENTE_CONCILIACION)
   // -- mismo verde, mismo confetti, mismo audio de exito. Eso le decia al
@@ -2244,6 +2308,8 @@ function mostrar(r,d){
     // celebrar algo que todavia tiene una advertencia sin resolver.
     if(limpio) lanzarChispas();
     hablar(d, r);
+    comprobanteParaIntegracion = d;
+    $('btnEnviarIntegracion').hidden = !modoIntegracionCierre;
   }else{
     const titulo=r.veredicto==='DUPLICADO'?'Comprobante duplicado':r.veredicto==='ERROR'?'No se pudo verificar':'No continuar';
     $('rlabel').innerHTML = dup ? 'Ya fue <b>usado</b>' : 'Comprobante <b>rechazado</b>';
@@ -2251,6 +2317,8 @@ function mostrar(r,d){
     $('ramount').textContent=titulo;
     $('rbody').innerHTML='<div class="card"><div class="reasons">'+(r.motivos||['Comprobante no válido.']).map(escapeHtml).join('<br>')+'</div></div>';
     hablarRechazo(r, d);
+    comprobanteParaIntegracion = null;
+    $('btnEnviarIntegracion').hidden = true;
   }
 }
 // Tema de la pantalla de resultado (claro por defecto) -- guardado en
